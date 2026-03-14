@@ -928,6 +928,89 @@ def show_recent_sessions(limit: int = 10) -> None:
     conn.close()
 
 
+def inspect_session_by_id(session_id: int) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, date, bodyweight, notes
+        FROM sessions
+        WHERE id = ?
+    """, (session_id,))
+    session = cur.fetchone()
+
+    if not session:
+        print(f"\nSession #{session_id} not found.")
+        conn.close()
+        return
+
+    session_id, date, bodyweight, notes = session
+
+    print("\n+++ SESSION INSPECTOR +++")
+    print(f"Session ID: {session_id}")
+    print(f"Date: {date}")
+    print(f"Bodyweight: {bodyweight}")
+    print(f"Notes: {notes if notes else '(none)'}")
+
+    cur.execute("""
+        SELECT movement, implement, reps, seconds, load, notes
+        FROM exposures
+        WHERE session_id = ?
+        ORDER BY id
+    """, (session_id,))
+    exposures = cur.fetchall()
+
+    if exposures:
+        print("\nExposure:")
+        for movement, implement, reps, seconds, load, exposure_notes in exposures:
+            parts = [movement]
+            if implement:
+                parts.append(f"via {implement}")
+            if reps is not None:
+                parts.append(f"{reps} reps")
+            if seconds is not None:
+                parts.append(f"{seconds} sec")
+            if load is not None:
+                parts.append(f"load {format_load(load)}")
+            print("  - " + " | ".join(parts))
+
+    cur.execute("""
+        SELECT id, name
+        FROM exercises
+        WHERE session_id = ?
+        ORDER BY id
+    """, (session_id,))
+    exercises = cur.fetchall()
+
+    if exercises:
+        print("\nExercises:")
+        for ex_id, ex_name in exercises:
+            print(f"\n{ex_name}")
+            cur.execute("""
+                SELECT load, reps
+                FROM sets
+                WHERE exercise_id = ?
+                ORDER BY id
+            """, (ex_id,))
+            sets = cur.fetchall()
+
+            for load, reps in sets:
+                print(f"  {format_load(load)} x {reps}")
+
+    if not exposures and not exercises:
+        print("\nNo exercises or exposures recorded for this session.")
+
+    conn.close()
+
+
+def inspect_session_prompt() -> None:
+    raw = input("Enter session ID: ").strip()
+    if not raw.isdigit():
+        print("Invalid session ID.")
+        return
+    inspect_session_by_id(int(raw))
+
+
 def main() -> None:
     init_db()
 
@@ -940,6 +1023,7 @@ def main() -> None:
     print("5) Show weekly exposure report")
     print("6) Undo last log")
     print("7) Show recent sessions")
+    print("8) Inspect session by ID")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -977,6 +1061,9 @@ def main() -> None:
 
     elif choice == "7":
         show_recent_sessions()
+
+    elif choice == "8":
+        inspect_session_prompt()
 
     else:
         print("Invalid choice.")
