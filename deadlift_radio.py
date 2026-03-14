@@ -1055,6 +1055,49 @@ def inspect_session_prompt() -> None:
     inspect_session_by_id(int(raw))
 
 
+def delete_session_prompt() -> None:
+    raw = input("Enter session ID to delete: ").strip()
+    if not raw.isdigit():
+        print("Invalid session ID.")
+        return
+
+    session_id = int(raw)
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, date, bodyweight, notes
+        FROM sessions
+        WHERE id = ?
+    """, (session_id,))
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        print(f"Session #{session_id} not found.")
+        return
+
+    _, date, bodyweight, notes = row
+    first_note = (notes.splitlines()[0] if notes else "").strip()
+
+    print("\n+++ DELETE SESSION BY ID +++")
+    print(f"Session ID: {session_id}")
+    print(f"Date: {date}")
+    print(f"Bodyweight: {bodyweight}")
+    print(f"First note line: {first_note if first_note else '(none)'}")
+
+    confirm = input("Type DELETE to remove this session: ").strip()
+    if confirm != "DELETE":
+        print("Delete cancelled.")
+        return
+
+    deleted = delete_session_by_id(session_id)
+    if deleted:
+        print(f"Deleted session #{session_id}.")
+    else:
+        print("Could not delete session.")
+
+
 def main() -> None:
     init_db()
 
@@ -1068,6 +1111,7 @@ def main() -> None:
     print("6) Undo last log")
     print("7) Show recent sessions")
     print("8) Inspect session by ID")
+    print("9) Delete session by ID")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1122,6 +1166,9 @@ def main() -> None:
 
     elif choice == "8":
         inspect_session_prompt()
+
+    elif choice == "9":
+        delete_session_prompt()
 
     else:
         print("Invalid choice.")
