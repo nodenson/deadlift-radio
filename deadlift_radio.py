@@ -900,6 +900,34 @@ def undo_last_session() -> None:
         print("Could not delete session.")
 
 
+def show_recent_sessions(limit: int = 10) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, date, bodyweight, notes
+        FROM sessions
+        ORDER BY id DESC
+        LIMIT ?
+    """, (limit,))
+    rows = cur.fetchall()
+
+    if not rows:
+        print("\nNo sessions found.")
+        conn.close()
+        return
+
+    print("\n+++ RECENT SESSIONS +++")
+    for session_id, date, bodyweight, notes in rows:
+        first_note = (notes.splitlines()[0] if notes else "").strip()
+        print(
+            f"#{session_id} | {date} | bw={bodyweight} | "
+            f"first note: {first_note if first_note else '(none)'}"
+        )
+
+    conn.close()
+
+
 def main() -> None:
     init_db()
 
@@ -911,6 +939,7 @@ def main() -> None:
     print("4) Show last session summary")
     print("5) Show weekly exposure report")
     print("6) Undo last log")
+    print("7) Show recent sessions")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -945,6 +974,9 @@ def main() -> None:
 
     elif choice == "6":
         undo_last_session()
+
+    elif choice == "7":
+        show_recent_sessions()
 
     else:
         print("Invalid choice.")
