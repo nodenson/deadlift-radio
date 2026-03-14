@@ -48,6 +48,16 @@ def format_load(load: float):
     return int(load) if float(load).is_integer() else load
 
 
+def parse_log_date(line: str):
+    text = line.strip()
+    for fmt in ("%B %d %Y", "%b %d %Y"):
+        try:
+            return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
+        except ValueError:
+            pass
+    return None
+
+
 def parse_standard_set_line(line: str):
     """
     Supports:
@@ -250,17 +260,24 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         raise ValueError("Workout log was empty.")
 
     inferred_bw = None
+    inferred_date = None
+
     for line in lines:
-        maybe_bw = extract_bodyweight_from_line(line)
-        if maybe_bw is not None:
-            inferred_bw = maybe_bw
-            break
+        if inferred_date is None:
+            maybe_date = parse_log_date(line)
+            if maybe_date is not None:
+                inferred_date = maybe_date
+
+        if inferred_bw is None:
+            maybe_bw = extract_bodyweight_from_line(line)
+            if maybe_bw is not None:
+                inferred_bw = maybe_bw
 
     if bodyweight is None and inferred_bw is not None:
         bodyweight = inferred_bw
 
     if session_date is None:
-        session_date = datetime.now().strftime("%Y-%m-%d")
+        session_date = inferred_date or datetime.now().strftime("%Y-%m-%d")
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -304,6 +321,10 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
 
     for line in lines:
         lower_line = line.lower().strip()
+
+        if parse_log_date(line) is not None:
+            session_notes.append(line)
+            continue
 
         if looks_like_metadata(line):
             session_notes.append(line)
@@ -374,6 +395,8 @@ def show_last_session() -> None:
         return
 
     session_id, date, bodyweight, notes = session
+    print(f"\n+++ DEADLIFT RADIO ARCHIVE ENGINE +++")
+    print("Build → Record → Analyze → Ascend")
     print(f"\n=== LAST SESSION ===")
     print(f"Session ID: {session_id}")
     print(f"Date: {date}")
@@ -417,7 +440,7 @@ def show_prs() -> None:
     """)
     rows = cur.fetchall()
 
-    print("\n=== PRs BY EXERCISE ===")
+    print("\n+++ PR REGISTER +++")
     if not rows:
         print("No data yet.")
     else:
@@ -484,11 +507,11 @@ def show_last_session_summary() -> None:
         total_reps += reps
         total_tonnage += load * reps
 
-    print("\n=== SESSION SUMMARY ===")
+    print("\n+++ IRON RECORD +++")
     print(f"Date: {date}")
     print(f"Total sets: {total_sets}")
     print(f"Total reps: {total_reps}")
-    print(f"Total tonnage: {format_load(total_tonnage)}")
+    print(f"Total iron moved: {format_load(total_tonnage)}")
 
     print("\nBy exercise:")
     for name, stats in per_exercise.items():
@@ -506,7 +529,8 @@ def show_last_session_summary() -> None:
 def main() -> None:
     init_db()
 
-    print("Deadlift Radio Archive Engine")
+    print("+++ DEADLIFT RADIO ARCHIVE ENGINE +++")
+    print("Build → Record → Analyze → Ascend")
     print("1) Log workout")
     print("2) Show last session")
     print("3) Show PRs")
