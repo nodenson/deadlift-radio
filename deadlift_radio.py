@@ -323,7 +323,7 @@ def infer_exposure_movements(exercise_name: str):
     return exposure_map.get(name, [])
 
 
-def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
+def infer_session_metadata(raw_text: str, bodyweight=None, session_date=None):
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
     if not lines:
         raise ValueError("Workout log was empty.")
@@ -347,6 +347,50 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
 
     if session_date is None:
         session_date = inferred_date or datetime.now().strftime("%Y-%m-%d")
+
+    return lines, bodyweight, session_date
+
+
+def find_sessions_by_date(session_date: str):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, date, bodyweight, notes
+        FROM sessions
+        WHERE date = ?
+        ORDER BY id DESC
+    """, (session_date,))
+    rows = cur.fetchall()
+    conn.close()
+    return rows
+
+
+def warn_if_duplicate_session_date(session_date: str) -> bool:
+    matches = find_sessions_by_date(session_date)
+
+    if not matches:
+        return True
+
+    print("\n+++ DUPLICATE DATE WARNING +++")
+    print(f"Existing sessions found for {session_date}:")
+    for session_id, date, bodyweight, notes in matches:
+        first_note = (notes.splitlines()[0] if notes else "").strip()
+        print(
+            f"  #{session_id} | {date} | bw={bodyweight} | "
+            f"first note: {first_note if first_note else '(none)'}"
+        )
+
+    confirm = input("Log another session for this date? (y/n): ").strip().lower()
+    return confirm == "y"
+
+
+def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
+    lines, bodyweight, session_date = infer_session_metadata(
+        raw_text,
+        bodyweight=bodyweight,
+        session_date=session_date,
+    )
 
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -1039,7 +1083,21 @@ def main() -> None:
             buffer.append(line)
 
         raw_text = "\n".join(buffer)
-        session_id = ingest_workout(raw_text, bodyweight=bodyweight)
+        _, inferred_bodyweight, inferred_session_date = infer_session_metadata(
+            raw_text,
+            bodyweight=bodyweight,
+            session_date=None,
+        )
+
+        if not warn_if_duplicate_session_date(inferred_session_date):
+            print("Log cancelled.")
+            return
+
+        session_id = ingest_workout(
+            raw_text,
+            bodyweight=inferred_bodyweight,
+            session_date=inferred_session_date,
+        )
         print(f"\nLogged session #{session_id}")
         show_last_session()
         show_last_session_summary()
