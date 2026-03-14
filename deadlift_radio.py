@@ -40,6 +40,20 @@ def init_db() -> None:
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS exposures (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        movement TEXT NOT NULL,
+        implement TEXT,
+        reps INTEGER,
+        seconds INTEGER,
+        load REAL,
+        notes TEXT,
+        FOREIGN KEY(session_id) REFERENCES sessions(id)
+    )
+    """)
+
     conn.commit()
     conn.close()
 
@@ -67,18 +81,6 @@ def parse_log_date(line: str):
 
 
 def parse_standard_set_line(line: str):
-    """
-    Supports:
-      315 x 5
-      275 x 8 x 2
-      365x1
-      225 X 10 X 3
-      70lbs x 25 reps
-      80 lbs x 30
-      70s x 12, then 6
-      240 x 15,15
-    Returns list of (load, reps)
-    """
     text = line.strip().lower()
     text = re.sub(r"\bthen\b", ",", text)
     text = re.sub(r"\s+", " ", text)
@@ -105,11 +107,6 @@ def parse_standard_set_line(line: str):
 
 
 def parse_weight_then_reps_no_x(line: str):
-    """
-    Supports:
-      15 lbs 50 reps
-      70 lbs 40
-    """
     text = line.strip().lower()
     text = re.sub(r"\s+", " ", text)
 
@@ -123,13 +120,6 @@ def parse_weight_then_reps_no_x(line: str):
 
 
 def parse_rep_only_line(line: str, current_load_hint):
-    """
-    Supports:
-      40 reps
-      20
-    If current_load_hint exists, use it.
-    Otherwise record as 0 x reps.
-    """
     text = line.strip().lower()
 
     m = re.match(r"^\s*(\d+)\s*(?:reps?)?\s*$", text)
@@ -142,14 +132,6 @@ def parse_rep_only_line(line: str, current_load_hint):
 
 
 def parse_weight_only_line(line: str, pending_reps_hint):
-    """
-    Supports:
-      70 lbs
-
-    Cases:
-    - if a reps hint already exists, return a full set like 70 x 40
-    - otherwise return a load hint marker so the next rep-only line can use it
-    """
     text = line.strip().lower()
     m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(?:lbs?|lb)\s*$", text)
     if not m:
@@ -233,12 +215,6 @@ def is_normal_exercise_heading(line: str) -> bool:
 
 
 def parse_reps_first_exercise_heading(line: str):
-    """
-    Supports:
-      40 reverse triceps extensions cable
-    Returns:
-      (exercise_name, reps_hint)
-    """
     m = re.match(r"^\s*(\d+)\s+([a-zA-Z].+?)\s*$", line)
     if not m:
         return None
@@ -260,6 +236,73 @@ def parse_reps_first_exercise_heading(line: str):
         return None
 
     return exercise_name, reps_hint
+
+
+def classify_exposure(line: str):
+    text = line.strip()
+    lower = text.lower()
+
+    if "front levers" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        reps = nums[0] if nums else None
+        return {
+            "movement": "lever_front",
+            "implement": "sword grip handle",
+            "reps": reps,
+            "seconds": None,
+            "load": None,
+            "notes": text,
+        }
+
+    if "back levers" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        reps = nums[0] if nums else None
+        return {
+            "movement": "lever_back",
+            "implement": "sword grip handle",
+            "reps": reps,
+            "seconds": None,
+            "load": None,
+            "notes": text,
+        }
+
+    if "neutral setting" in lower and "rep" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        reps = nums[0] if nums else None
+        return {
+            "movement": "pronation_supination",
+            "implement": "pronation device",
+            "reps": reps,
+            "seconds": None,
+            "load": None,
+            "notes": text,
+        }
+
+    if "close" in lower and "hand" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        reps = nums[0] if nums else None
+        return {
+            "movement": "crush_grip",
+            "implement": "captains of crush",
+            "reps": reps,
+            "seconds": None,
+            "load": None,
+            "notes": text,
+        }
+
+    if "seconds" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        seconds = nums[0] if nums else None
+        return {
+            "movement": "extension",
+            "implement": "chest expander",
+            "reps": None,
+            "seconds": seconds,
+            "load": None,
+            "notes": text,
+        }
+
+    return None
 
 
 def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
@@ -311,6 +354,23 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         current_load_hint = None
         pending_reps_hint = None
 
+    def insert_exposure(exposure: dict):
+        cur.execute(
+            """
+            INSERT INTO exposures (session_id, movement, implement, reps, seconds, load, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                session_id,
+                exposure["movement"],
+                exposure.get("implement"),
+                exposure.get("reps"),
+                exposure.get("seconds"),
+                exposure.get("load"),
+                exposure.get("notes"),
+            ),
+        )
+
     def insert_sets(parsed_sets):
         nonlocal current_load_hint, pending_reps_hint
         if current_exercise_id is None:
@@ -334,7 +394,13 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
             session_notes.append(line)
             continue
 
-        if looks_like_metadata(line):
+        if lower_line.startswith("bw") or lower_line.startswith("bodyweight"):
+            session_notes.append(line)
+            continue
+
+        exposure = classify_exposure(line)
+        if exposure is not None:
+            insert_exposure(exposure)
             session_notes.append(line)
             continue
 
@@ -412,6 +478,28 @@ def show_last_session() -> None:
     print(f"Notes: {notes if notes else '(none)'}")
 
     cur.execute("""
+        SELECT movement, implement, reps, seconds, load, notes
+        FROM exposures
+        WHERE session_id = ?
+        ORDER BY id
+    """, (session_id,))
+    exposures = cur.fetchall()
+
+    if exposures:
+        print("\n+++ FOREARM / REHAB EXPOSURE +++")
+        for movement, implement, reps, seconds, load, exposure_notes in exposures:
+            parts = [movement]
+            if implement:
+                parts.append(f"via {implement}")
+            if reps is not None:
+                parts.append(f"{reps} reps")
+            if seconds is not None:
+                parts.append(f"{seconds} sec")
+            if load is not None:
+                parts.append(f"load {format_load(load)}")
+            print("  - " + " | ".join(parts))
+
+    cur.execute("""
         SELECT id, name
         FROM exercises
         WHERE session_id = ?
@@ -486,9 +574,17 @@ def show_last_session_summary() -> None:
     """, (session_id,))
     rows = cur.fetchall()
 
-    if not rows:
+    cur.execute("""
+        SELECT movement, implement, reps, seconds, load
+        FROM exposures
+        WHERE session_id = ?
+        ORDER BY id
+    """, (session_id,))
+    exposure_rows = cur.fetchall()
+
+    if not rows and not exposure_rows:
         print("\n=== SESSION SUMMARY ===")
-        print("No sets found for last session.")
+        print("No data found for last session.")
         conn.close()
         return
 
@@ -525,38 +621,39 @@ def show_last_session_summary() -> None:
     print(f"Total reps: {total_reps}")
     print(f"Total iron moved: {format_load(total_tonnage)}")
 
-    print("\nBy exercise:")
-    for name, stats in per_exercise.items():
-        exercise_rows = [(load, reps) for ex_name, load, reps in rows if ex_name == name]
-        top_e1rm = 0.0
-        top_e1rm_set = None
+    if per_exercise:
+        print("\nBy exercise:")
+        for name, stats in per_exercise.items():
+            exercise_rows = [(load, reps) for ex_name, load, reps in rows if ex_name == name]
+            top_e1rm = 0.0
+            top_e1rm_set = None
 
-        for load, reps in exercise_rows:
-            e1rm = estimate_e1rm(load, reps)
-            if e1rm > top_e1rm:
-                top_e1rm = e1rm
-                top_e1rm_set = (load, reps)
+            for load, reps in exercise_rows:
+                e1rm = estimate_e1rm(load, reps)
+                if e1rm > top_e1rm:
+                    top_e1rm = e1rm
+                    top_e1rm_set = (load, reps)
 
-            if e1rm > best_e1rm:
-                best_e1rm = e1rm
-                best_e1rm_exercise = name
-                best_e1rm_set = (load, reps)
+                if e1rm > best_e1rm:
+                    best_e1rm = e1rm
+                    best_e1rm_exercise = name
+                    best_e1rm_set = (load, reps)
 
-        line = (
-            f"- {name}: "
-            f"{stats['sets']} sets, "
-            f"{stats['reps']} reps, "
-            f"top set {format_load(stats['top_set'])}, "
-            f"tonnage {format_load(stats['tonnage'])}"
-        )
-
-        if top_e1rm_set is not None and top_e1rm > 0:
-            line += (
-                f", best e1rm {format_load(top_e1rm)} "
-                f"from {format_load(top_e1rm_set[0])} x {top_e1rm_set[1]}"
+            line = (
+                f"- {name}: "
+                f"{stats['sets']} sets, "
+                f"{stats['reps']} reps, "
+                f"top set {format_load(stats['top_set'])}, "
+                f"tonnage {format_load(stats['tonnage'])}"
             )
 
-        print(line)
+            if top_e1rm_set is not None and top_e1rm > 0:
+                line += (
+                    f", best e1rm {format_load(top_e1rm)} "
+                    f"from {format_load(top_e1rm_set[0])} x {top_e1rm_set[1]}"
+                )
+
+            print(line)
 
     if best_e1rm_set is not None and best_e1rm_exercise is not None:
         print("\nPeak strength signal:")
@@ -565,6 +662,37 @@ def show_last_session_summary() -> None:
             f"{format_load(best_e1rm_set[0])} x {best_e1rm_set[1]} "
             f"-> estimated 1RM {format_load(best_e1rm)}"
         )
+
+    if exposure_rows:
+        movement_totals = {}
+        print("\n+++ JOINT / TENDON EXPOSURE +++")
+        for movement, implement, reps, seconds, load in exposure_rows:
+            if movement not in movement_totals:
+                movement_totals[movement] = {"reps": 0, "seconds": 0}
+            if reps is not None:
+                movement_totals[movement]["reps"] += reps
+            if seconds is not None:
+                movement_totals[movement]["seconds"] += seconds
+
+            parts = [movement]
+            if implement:
+                parts.append(f"via {implement}")
+            if reps is not None:
+                parts.append(f"{reps} reps")
+            if seconds is not None:
+                parts.append(f"{seconds} sec")
+            if load is not None:
+                parts.append(f"load {format_load(load)}")
+            print("  - " + " | ".join(parts))
+
+        print("\nExposure totals by movement:")
+        for movement, totals in movement_totals.items():
+            bits = []
+            if totals["reps"]:
+                bits.append(f"{totals['reps']} reps")
+            if totals["seconds"]:
+                bits.append(f"{totals['seconds']} sec")
+            print(f"- {movement}: " + ", ".join(bits))
 
     conn.close()
 
