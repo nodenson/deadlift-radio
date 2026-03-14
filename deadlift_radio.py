@@ -1,6 +1,6 @@
 import sqlite3
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 
 DB_PATH = os.getenv("DLR_DB_PATH", "archive_dev.db")
@@ -303,6 +303,24 @@ def classify_exposure(line: str):
         }
 
     return None
+
+
+def infer_exposure_movements(exercise_name: str):
+    name = exercise_name.strip().lower()
+
+    exposure_map = {
+        "bench": ["wrist_extension_stability", "elbow_extension", "support_grip"],
+        "incline dumbbell": ["support_grip", "wrist_stability", "elbow_extension"],
+        "hammer curls db": ["elbow_flexion", "support_grip", "radial_deviation_bias"],
+        "t bar rows empty chest supported": ["support_grip", "elbow_flexion"],
+        "pushups": ["wrist_extension_stability", "elbow_extension"],
+        "triceps extensions ez bar": ["elbow_extension"],
+        "reverse triceps extensions cable": ["elbow_extension"],
+        "side deltoid raises machine": ["support_grip"],
+        "machine rear deltoids": ["support_grip"],
+    }
+
+    return exposure_map.get(name, [])
 
 
 def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
@@ -697,6 +715,191 @@ def show_last_session_summary() -> None:
     conn.close()
 
 
+def show_weekly_exposure_report(days: int = 7) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT MAX(date) FROM sessions")
+    max_date_row = cur.fetchone()
+    if not max_date_row or not max_date_row[0]:
+        print("\nNo sessions found.")
+        conn.close()
+        return
+
+    anchor_date = datetime.strptime(max_date_row[0], "%Y-%m-%d").date()
+    start_date = anchor_date - timedelta(days=days - 1)
+
+    cur.execute("""
+        SELECT s.date, e.movement, e.implement, e.reps, e.seconds, e.load
+        FROM exposures e
+        JOIN sessions s ON s.id = e.session_id
+        WHERE s.date >= ? AND s.date <= ?
+        ORDER BY s.date, e.id
+    """, (start_date.isoformat(), anchor_date.isoformat()))
+    direct_rows = cur.fetchall()
+
+    cur.execute("""
+        SELECT s.date, ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        WHERE s.date >= ? AND s.date <= ?
+        ORDER BY s.date, st.id
+    """, (start_date.isoformat(), anchor_date.isoformat()))
+    inferred_rows = cur.fetchall()
+
+    print("\n+++ WEEKLY JOINT / TENDON EXPOSURE +++")
+    print(f"Window: {start_date.isoformat()} to {anchor_date.isoformat()}")
+
+    if not direct_rows and not inferred_rows:
+        print("No exposure data found in this window.")
+        conn.close()
+        return
+
+    movement_totals = {}
+    daily_totals = {}
+
+    def ensure_bucket(session_date, movement):
+        if movement not in movement_totals:
+            movement_totals[movement] = {
+                "reps": 0,
+                "seconds": 0,
+                "entries": 0,
+                "sources": {"direct": 0, "inferred": 0},
+            }
+        if session_date not in daily_totals:
+            daily_totals[session_date] = {}
+        if movement not in daily_totals[session_date]:
+            daily_totals[session_date][movement] = {
+                "reps": 0,
+                "seconds": 0,
+                "entries": 0,
+                "sources": {"direct": 0, "inferred": 0},
+            }
+
+    for session_date, movement, implement, reps, seconds, load in direct_rows:
+        ensure_bucket(session_date, movement)
+
+        if reps is not None:
+            movement_totals[movement]["reps"] += reps
+            daily_totals[session_date][movement]["reps"] += reps
+        if seconds is not None:
+            movement_totals[movement]["seconds"] += seconds
+            daily_totals[session_date][movement]["seconds"] += seconds
+
+        movement_totals[movement]["entries"] += 1
+        daily_totals[session_date][movement]["entries"] += 1
+        movement_totals[movement]["sources"]["direct"] += 1
+        daily_totals[session_date][movement]["sources"]["direct"] += 1
+
+    for session_date, exercise_name, load, reps in inferred_rows:
+        inferred_movements = infer_exposure_movements(exercise_name)
+        for movement in inferred_movements:
+            ensure_bucket(session_date, movement)
+            movement_totals[movement]["reps"] += reps
+            daily_totals[session_date][movement]["reps"] += reps
+            movement_totals[movement]["entries"] += 1
+            daily_totals[session_date][movement]["entries"] += 1
+            movement_totals[movement]["sources"]["inferred"] += 1
+            daily_totals[session_date][movement]["sources"]["inferred"] += 1
+
+    print("\nTotals by movement:")
+    for movement, totals in movement_totals.items():
+        bits = []
+        if totals["reps"]:
+            bits.append(f"{totals['reps']} reps")
+        if totals["seconds"]:
+            bits.append(f"{totals['seconds']} sec")
+        bits.append(f"{totals['entries']} exposures")
+        source_bits = []
+        if totals["sources"]["direct"]:
+            source_bits.append(f"{totals['sources']['direct']} direct")
+        if totals["sources"]["inferred"]:
+            source_bits.append(f"{totals['sources']['inferred']} inferred")
+        if source_bits:
+            bits.append(", ".join(source_bits))
+        print(f"- {movement}: " + ", ".join(bits))
+
+    print("\nDaily breakdown:")
+    for session_date in sorted(daily_totals.keys()):
+        print(f"{session_date}")
+        for movement, totals in daily_totals[session_date].items():
+            bits = []
+            if totals["reps"]:
+                bits.append(f"{totals['reps']} reps")
+            if totals["seconds"]:
+                bits.append(f"{totals['seconds']} sec")
+            bits.append(f"{totals['entries']} exposures")
+            source_bits = []
+            if totals["sources"]["direct"]:
+                source_bits.append(f"{totals['sources']['direct']} direct")
+            if totals["sources"]["inferred"]:
+                source_bits.append(f"{totals['sources']['inferred']} inferred")
+            if source_bits:
+                bits.append(", ".join(source_bits))
+            print(f"  - {movement}: " + ", ".join(bits))
+
+    conn.close()
+
+
+def delete_session_by_id(session_id: int) -> bool:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT id, date FROM sessions WHERE id = ?", (session_id,))
+    row = cur.fetchone()
+    if not row:
+        conn.close()
+        return False
+
+    cur.execute("DELETE FROM sets WHERE exercise_id IN (SELECT id FROM exercises WHERE session_id = ?)", (session_id,))
+    cur.execute("DELETE FROM exercises WHERE session_id = ?", (session_id,))
+    cur.execute("DELETE FROM exposures WHERE session_id = ?", (session_id,))
+    cur.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+
+    conn.commit()
+    conn.close()
+    return True
+
+
+def undo_last_session() -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, date, bodyweight, notes
+        FROM sessions
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+    row = cur.fetchone()
+    conn.close()
+
+    if not row:
+        print("\nNo sessions found.")
+        return
+
+    session_id, date, bodyweight, notes = row
+    first_note = (notes.splitlines()[0] if notes else "").strip()
+
+    print("\n+++ UNDO LAST LOG +++")
+    print(f"Session ID: {session_id}")
+    print(f"Date: {date}")
+    print(f"Bodyweight: {bodyweight}")
+    print(f"First note line: {first_note if first_note else '(none)'}")
+
+    confirm = input("Type DELETE to remove this session: ").strip()
+    if confirm != "DELETE":
+        print("Undo cancelled.")
+        return
+
+    deleted = delete_session_by_id(session_id)
+    if deleted:
+        print(f"Deleted session #{session_id}.")
+    else:
+        print("Could not delete session.")
+
+
 def main() -> None:
     init_db()
 
@@ -706,6 +909,8 @@ def main() -> None:
     print("2) Show last session")
     print("3) Show PRs")
     print("4) Show last session summary")
+    print("5) Show weekly exposure report")
+    print("6) Undo last log")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -734,6 +939,12 @@ def main() -> None:
 
     elif choice == "4":
         show_last_session_summary()
+
+    elif choice == "5":
+        show_weekly_exposure_report()
+
+    elif choice == "6":
+        undo_last_session()
 
     else:
         print("Invalid choice.")
