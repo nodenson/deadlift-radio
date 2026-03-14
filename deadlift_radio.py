@@ -1,9 +1,10 @@
 import sqlite3
 import re
 from datetime import datetime
-
 import os
+
 DB_PATH = os.getenv("DLR_DB_PATH", "archive_dev.db")
+
 
 def init_db() -> None:
     conn = sqlite3.connect(DB_PATH)
@@ -43,31 +44,220 @@ def init_db() -> None:
     conn.close()
 
 
-def parse_set_line(line: str):
+def format_load(load: float):
+    return int(load) if float(load).is_integer() else load
+
+
+def parse_standard_set_line(line: str):
     """
     Supports:
       315 x 5
       275 x 8 x 2
       365x1
       225 X 10 X 3
+      70lbs x 25 reps
+      80 lbs x 30
+      70s x 12, then 6
+      240 x 15,15
     Returns list of (load, reps)
     """
-    pattern = r"^\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+)(?:\s*[xX]\s*(\d+))?\s*$"
-    match = re.match(pattern, line)
-    if not match:
+    text = line.strip().lower()
+    text = re.sub(r"\bthen\b", ",", text)
+    text = re.sub(r"\s+", " ", text)
+
+    m = re.match(
+        r"^\s*(\d+(?:\.\d+)?)(?:\s*(?:lbs?|lb|s))?\s*[xX]\s*([\d,\s]+?)(?:\s*[xX]\s*(\d+))?\s*(?:reps?)?\s*$",
+        text,
+    )
+    if not m:
         return None
 
-    load = float(match.group(1))
-    reps = int(match.group(2))
-    set_count = int(match.group(3)) if match.group(3) else 1
+    load = float(m.group(1))
+    reps_blob = m.group(2).strip()
+    set_count = int(m.group(3)) if m.group(3) else None
 
-    return [(load, reps) for _ in range(set_count)]
+    rep_values = [int(x) for x in re.findall(r"\d+", reps_blob)]
+    if not rep_values:
+        return None
+
+    if set_count is not None and len(rep_values) == 1:
+        return [(load, rep_values[0]) for _ in range(set_count)]
+
+    return [(load, reps) for reps in rep_values]
+
+
+def parse_weight_then_reps_no_x(line: str):
+    """
+    Supports:
+      15 lbs 50 reps
+      70 lbs 40
+    """
+    text = line.strip().lower()
+    text = re.sub(r"\s+", " ", text)
+
+    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(?:lbs?|lb)\s*(\d+)\s*(?:reps?)?\s*$", text)
+    if not m:
+        return None
+
+    load = float(m.group(1))
+    reps = int(m.group(2))
+    return [(load, reps)]
+
+
+def parse_rep_only_line(line: str, current_load_hint):
+    """
+    Supports:
+      40 reps
+      20
+    If current_load_hint exists, use it.
+    Otherwise record as 0 x reps.
+    """
+    text = line.strip().lower()
+
+    m = re.match(r"^\s*(\d+)\s*(?:reps?)?\s*$", text)
+    if not m:
+        return None
+
+    reps = int(m.group(1))
+    load = current_load_hint if current_load_hint is not None else 0.0
+    return [(float(load), reps)]
+
+
+def parse_weight_only_line(line: str, pending_reps_hint):
+    """
+    Supports:
+      70 lbs
+
+    Cases:
+    - if a reps hint already exists, return a full set like 70 x 40
+    - otherwise return a load hint marker so the next rep-only line can use it
+    """
+    text = line.strip().lower()
+    m = re.match(r"^\s*(\d+(?:\.\d+)?)\s*(?:lbs?|lb)\s*$", text)
+    if not m:
+        return None
+
+    load = float(m.group(1))
+
+    if pending_reps_hint is not None:
+        return [(load, int(pending_reps_hint))]
+
+    return ("LOAD_HINT", load)
+
+
+def looks_like_metadata(line: str) -> bool:
+    lower = line.strip().lower()
+    month_prefixes = (
+        "january ", "february ", "march ", "april ", "may ", "june ",
+        "july ", "august ", "september ", "october ", "november ", "december "
+    )
+    return lower.startswith(month_prefixes) or lower.startswith("bw") or lower.startswith("bodyweight")
+
+
+def looks_like_note_line(line: str) -> bool:
+    lower = line.strip().lower()
+
+    note_starts = (
+        "warmup",
+        "maybe ",
+        "front levers",
+        "back levers",
+        "scapular pulls",
+    )
+
+    note_contains = (
+        "neutral setting",
+        "seconds",
+        "closes each hand",
+        "palms down",
+        "palms up",
+        "laying face down",
+    )
+
+    exact_notes = {
+        "chest expander",
+        "forearm supination pronation device",
+        "captains of crush sport gripper",
+        "2 springs",
+    }
+
+    return (
+        lower in exact_notes
+        or lower.startswith(note_starts)
+        or any(token in lower for token in note_contains)
+    )
+
+
+def extract_bodyweight_from_line(line: str):
+    m = re.search(r"bw\.?\s*(\d+(?:\.\d+)?)", line.strip().lower())
+    if m:
+        return float(m.group(1))
+    return None
+
+
+def normalize_exercise_name(line: str) -> str:
+    return re.sub(r"\s+", " ", line.strip())
+
+
+def is_normal_exercise_heading(line: str) -> bool:
+    if any(ch.isdigit() for ch in line):
+        return False
+
+    lower = line.strip().lower()
+    if lower in {"bar"}:
+        return False
+
+    if looks_like_note_line(line):
+        return False
+
+    word_count = len(line.split())
+    return 1 <= word_count <= 6 and len(line.strip()) <= 50
+
+
+def parse_reps_first_exercise_heading(line: str):
+    """
+    Supports:
+      40 reverse triceps extensions cable
+    Returns:
+      (exercise_name, reps_hint)
+    """
+    m = re.match(r"^\s*(\d+)\s+([a-zA-Z].+?)\s*$", line)
+    if not m:
+        return None
+
+    reps_hint = int(m.group(1))
+    exercise_name = normalize_exercise_name(m.group(2))
+    lower_name = exercise_name.lower()
+
+    banned_starts = ("rep", "reps", "lb", "lbs", "spring", "springs", "close", "closes")
+    banned_contains = ("setting", "each hand", "seconds")
+
+    if lower_name.startswith(banned_starts):
+        return None
+    if any(token in lower_name for token in banned_contains):
+        return None
+
+    word_count = len(exercise_name.split())
+    if word_count < 2:
+        return None
+
+    return exercise_name, reps_hint
 
 
 def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
     if not lines:
         raise ValueError("Workout log was empty.")
+
+    inferred_bw = None
+    for line in lines:
+        maybe_bw = extract_bodyweight_from_line(line)
+        if maybe_bw is not None:
+            inferred_bw = maybe_bw
+            break
+
+    if bodyweight is None and inferred_bw is not None:
+        bodyweight = inferred_bw
 
     if session_date is None:
         session_date = datetime.now().strftime("%Y-%m-%d")
@@ -83,33 +273,77 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
 
     current_exercise_id = None
     session_notes = []
-    exercise_names = []
+    current_load_hint = None
+    pending_reps_hint = None
+
+    def create_exercise(name: str):
+        nonlocal current_exercise_id, current_load_hint, pending_reps_hint
+        cur.execute(
+            "INSERT INTO exercises (session_id, name) VALUES (?, ?)",
+            (session_id, name)
+        )
+        current_exercise_id = cur.lastrowid
+        current_load_hint = None
+        pending_reps_hint = None
+
+    def insert_sets(parsed_sets):
+        nonlocal current_load_hint, pending_reps_hint
+        if current_exercise_id is None:
+            for load, reps in parsed_sets:
+                session_notes.append(f"Orphan set ignored: {format_load(load)} x {reps}")
+            return
+
+        for load, reps in parsed_sets:
+            cur.execute(
+                "INSERT INTO sets (exercise_id, load, reps, effort, pain) VALUES (?, ?, ?, ?, ?)",
+                (current_exercise_id, load, reps, None, None)
+            )
+            current_load_hint = load
+
+        pending_reps_hint = None
 
     for line in lines:
-        parsed_sets = parse_set_line(line)
+        lower_line = line.lower().strip()
+
+        if looks_like_metadata(line):
+            session_notes.append(line)
+            continue
+
+        if looks_like_note_line(line):
+            session_notes.append(line)
+            continue
+
+        if lower_line == "bar":
+            current_load_hint = 45.0
+            session_notes.append("Bar")
+            continue
+
+        parsed_sets = (
+            parse_standard_set_line(line)
+            or parse_weight_then_reps_no_x(line)
+            or parse_weight_only_line(line, pending_reps_hint)
+            or parse_rep_only_line(line, current_load_hint)
+        )
 
         if parsed_sets:
-            if current_exercise_id is None:
-                session_notes.append(f"Orphan set ignored: {line}")
-                continue
-
-            for load, reps in parsed_sets:
-                cur.execute(
-                    "INSERT INTO sets (exercise_id, load, reps, effort, pain) VALUES (?, ?, ?, ?, ?)",
-                    (current_exercise_id, load, reps, None, None)
-                )
-        else:
-            looks_like_exercise = not any(ch.isdigit() for ch in line)
-
-            if looks_like_exercise:
-                cur.execute(
-                    "INSERT INTO exercises (session_id, name) VALUES (?, ?)",
-                    (session_id, line)
-                )
-                current_exercise_id = cur.lastrowid
-                exercise_names.append(line)
+            if isinstance(parsed_sets, tuple) and parsed_sets[0] == "LOAD_HINT":
+                current_load_hint = float(parsed_sets[1])
             else:
-                session_notes.append(line)
+                insert_sets(parsed_sets)
+            continue
+
+        reps_first_heading = parse_reps_first_exercise_heading(line)
+        if reps_first_heading:
+            exercise_name, reps_hint = reps_first_heading
+            create_exercise(exercise_name)
+            pending_reps_hint = reps_hint
+            continue
+
+        if is_normal_exercise_heading(line):
+            create_exercise(normalize_exercise_name(line))
+            continue
+
+        session_notes.append(line)
 
     final_notes = "\n".join(session_notes).strip()
     cur.execute(
@@ -165,11 +399,7 @@ def show_last_session() -> None:
         sets = cur.fetchall()
 
         for load, reps in sets:
-            if float(load).is_integer():
-                load_display = int(load)
-            else:
-                load_display = load
-            print(f"  {load_display} x {reps}")
+            print(f"  {format_load(load)} x {reps}")
 
     conn.close()
 
@@ -192,9 +422,83 @@ def show_prs() -> None:
         print("No data yet.")
     else:
         for name, max_load in rows:
-            if float(max_load).is_integer():
-                max_load = int(max_load)
-            print(f"{name}: {max_load}")
+            print(f"{name}: {format_load(max_load)}")
+
+    conn.close()
+
+
+def show_last_session_summary() -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, date
+        FROM sessions
+        ORDER BY id DESC
+        LIMIT 1
+    """)
+    session = cur.fetchone()
+
+    if not session:
+        print("\nNo sessions found.")
+        conn.close()
+        return
+
+    session_id, date = session
+
+    cur.execute("""
+        SELECT e.name, s.load, s.reps
+        FROM exercises e
+        JOIN sets s ON s.exercise_id = e.id
+        WHERE e.session_id = ?
+        ORDER BY e.id, s.id
+    """, (session_id,))
+    rows = cur.fetchall()
+
+    if not rows:
+        print("\n=== SESSION SUMMARY ===")
+        print("No sets found for last session.")
+        conn.close()
+        return
+
+    per_exercise = {}
+    total_sets = 0
+    total_reps = 0
+    total_tonnage = 0.0
+
+    for name, load, reps in rows:
+        if name not in per_exercise:
+            per_exercise[name] = {
+                "sets": 0,
+                "reps": 0,
+                "tonnage": 0.0,
+                "top_set": 0.0,
+            }
+
+        per_exercise[name]["sets"] += 1
+        per_exercise[name]["reps"] += reps
+        per_exercise[name]["tonnage"] += load * reps
+        per_exercise[name]["top_set"] = max(per_exercise[name]["top_set"], load)
+
+        total_sets += 1
+        total_reps += reps
+        total_tonnage += load * reps
+
+    print("\n=== SESSION SUMMARY ===")
+    print(f"Date: {date}")
+    print(f"Total sets: {total_sets}")
+    print(f"Total reps: {total_reps}")
+    print(f"Total tonnage: {format_load(total_tonnage)}")
+
+    print("\nBy exercise:")
+    for name, stats in per_exercise.items():
+        print(
+            f"- {name}: "
+            f"{stats['sets']} sets, "
+            f"{stats['reps']} reps, "
+            f"top set {format_load(stats['top_set'])}, "
+            f"tonnage {format_load(stats['tonnage'])}"
+        )
 
     conn.close()
 
@@ -206,6 +510,7 @@ def main() -> None:
     print("1) Log workout")
     print("2) Show last session")
     print("3) Show PRs")
+    print("4) Show last session summary")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -224,12 +529,16 @@ def main() -> None:
         session_id = ingest_workout(raw_text, bodyweight=bodyweight)
         print(f"\nLogged session #{session_id}")
         show_last_session()
+        show_last_session_summary()
 
     elif choice == "2":
         show_last_session()
 
     elif choice == "3":
         show_prs()
+
+    elif choice == "4":
+        show_last_session_summary()
 
     else:
         print("Invalid choice.")
