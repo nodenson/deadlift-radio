@@ -45,7 +45,15 @@ def init_db() -> None:
 
 
 def format_load(load: float):
-    return int(load) if float(load).is_integer() else load
+    if float(load).is_integer():
+        return int(load)
+    return round(load, 1)
+
+
+def estimate_e1rm(load: float, reps: int) -> float:
+    if load <= 0 or reps <= 0:
+        return 0.0
+    return load * (1 + reps / 30.0)
 
 
 def parse_log_date(line: str):
@@ -507,6 +515,10 @@ def show_last_session_summary() -> None:
         total_reps += reps
         total_tonnage += load * reps
 
+    best_e1rm = 0.0
+    best_e1rm_exercise = None
+    best_e1rm_set = None
+
     print("\n+++ IRON RECORD +++")
     print(f"Date: {date}")
     print(f"Total sets: {total_sets}")
@@ -515,12 +527,43 @@ def show_last_session_summary() -> None:
 
     print("\nBy exercise:")
     for name, stats in per_exercise.items():
-        print(
+        exercise_rows = [(load, reps) for ex_name, load, reps in rows if ex_name == name]
+        top_e1rm = 0.0
+        top_e1rm_set = None
+
+        for load, reps in exercise_rows:
+            e1rm = estimate_e1rm(load, reps)
+            if e1rm > top_e1rm:
+                top_e1rm = e1rm
+                top_e1rm_set = (load, reps)
+
+            if e1rm > best_e1rm:
+                best_e1rm = e1rm
+                best_e1rm_exercise = name
+                best_e1rm_set = (load, reps)
+
+        line = (
             f"- {name}: "
             f"{stats['sets']} sets, "
             f"{stats['reps']} reps, "
             f"top set {format_load(stats['top_set'])}, "
             f"tonnage {format_load(stats['tonnage'])}"
+        )
+
+        if top_e1rm_set is not None and top_e1rm > 0:
+            line += (
+                f", best e1rm {format_load(top_e1rm)} "
+                f"from {format_load(top_e1rm_set[0])} x {top_e1rm_set[1]}"
+            )
+
+        print(line)
+
+    if best_e1rm_set is not None and best_e1rm_exercise is not None:
+        print("\nPeak strength signal:")
+        print(
+            f"{best_e1rm_exercise} — "
+            f"{format_load(best_e1rm_set[0])} x {best_e1rm_set[1]} "
+            f"-> estimated 1RM {format_load(best_e1rm)}"
         )
 
     conn.close()
