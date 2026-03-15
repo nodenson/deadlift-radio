@@ -1293,6 +1293,7 @@ def main() -> None:
     print("9) Delete session by ID")
     print("10) Show weekly strength report")
     print("11) Show weekly movement report")
+    print("12) Show training balance report")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1357,6 +1358,9 @@ def main() -> None:
     elif choice == "11":
         show_weekly_movement_report()
 
+    elif choice == "12":
+        show_training_balance_report()
+
     else:
         print("Invalid choice.")
 
@@ -1414,6 +1418,99 @@ def show_weekly_movement_report(days: int = 7) -> None:
         )
 
     conn.close()
+
+
+def show_training_balance_report(days: int = 7) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT MAX(date) FROM sessions")
+    row = cur.fetchone()
+
+    if not row or not row[0]:
+        print("\nNo sessions found.")
+        conn.close()
+        return
+
+    anchor_date = datetime.strptime(row[0], "%Y-%m-%d").date()
+    start_date = anchor_date - timedelta(days=days - 1)
+
+    cur.execute("""
+        SELECT ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        WHERE s.date >= ? AND s.date <= ?
+    """, (start_date.isoformat(), anchor_date.isoformat()))
+
+    rows = cur.fetchall()
+    conn.close()
+
+    print("\n+++ TRAINING BALANCE REPORT +++")
+    print(f"Window: {start_date} to {anchor_date}")
+
+    if not rows:
+        print("No strength data found in this window.")
+        return
+
+    buckets = {
+        "push": {"sets": 0, "reps": 0, "tonnage": 0.0},
+        "pull": {"sets": 0, "reps": 0, "tonnage": 0.0},
+        "arms": {"sets": 0, "reps": 0, "tonnage": 0.0},
+        "shoulders": {"sets": 0, "reps": 0, "tonnage": 0.0},
+    }
+
+    for exercise_name, load, reps in rows:
+        movement = classify_exercise_movement(exercise_name)
+        tonnage = load * reps
+
+        if movement in {"horizontal_press", "incline_press", "elbow_extension", "lateral_raise"}:
+            buckets["push"]["sets"] += 1
+            buckets["push"]["reps"] += reps
+            buckets["push"]["tonnage"] += tonnage
+
+        if movement in {"row", "rear_delt", "elbow_flexion"}:
+            buckets["pull"]["sets"] += 1
+            buckets["pull"]["reps"] += reps
+            buckets["pull"]["tonnage"] += tonnage
+
+        if movement in {"elbow_flexion", "elbow_extension"}:
+            buckets["arms"]["sets"] += 1
+            buckets["arms"]["reps"] += reps
+            buckets["arms"]["tonnage"] += tonnage
+
+        if movement in {"horizontal_press", "incline_press", "lateral_raise", "rear_delt"}:
+            buckets["shoulders"]["sets"] += 1
+            buckets["shoulders"]["reps"] += reps
+            buckets["shoulders"]["tonnage"] += tonnage
+
+    for bucket_name, stats in buckets.items():
+        print(
+            f"- {bucket_name}: "
+            f"{stats['sets']} sets, "
+            f"{stats['reps']} reps, "
+            f"tonnage {format_load(stats['tonnage'])}"
+        )
+
+    push_sets = buckets["push"]["sets"]
+    pull_sets = buckets["pull"]["sets"]
+
+    print("\nBalance signals:")
+    if push_sets > 0 and pull_sets > 0:
+        ratio = push_sets / pull_sets
+        print(f"- push:pull set ratio = {round(ratio, 2)}")
+        if ratio > 2.0:
+            print("- Warning: push volume is more than 2x pull volume.")
+        elif ratio < 0.5:
+            print("- Warning: pull volume is more than 2x push volume.")
+        else:
+            print("- Push/pull balance is within a reasonable range.")
+    elif push_sets > 0 and pull_sets == 0:
+        print("- Warning: push work logged with no pull work.")
+    elif pull_sets > 0 and push_sets == 0:
+        print("- Warning: pull work logged with no push work.")
+    else:
+        print("- No push or pull work found.")
 
 if __name__ == "__main__":
     main()
