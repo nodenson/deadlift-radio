@@ -1067,6 +1067,136 @@ def show_weekly_strength_report(days: int = 7) -> None:
     conn.close()
 
 
+def summarize_strength_window(start_date, end_date):
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        WHERE s.date >= ? AND s.date <= ?
+        ORDER BY ex.name, st.id
+    """, (start_date.isoformat(), end_date.isoformat()))
+    rows = cur.fetchall()
+    conn.close()
+
+    summary = {
+        "sets": 0,
+        "reps": 0,
+        "tonnage": 0.0,
+        "by_exercise": {},
+    }
+
+    for exercise_name, load, reps in rows:
+        if exercise_name not in summary["by_exercise"]:
+            summary["by_exercise"][exercise_name] = {
+                "sets": 0,
+                "reps": 0,
+                "tonnage": 0.0,
+            }
+
+        tonnage = load * reps
+        summary["sets"] += 1
+        summary["reps"] += reps
+        summary["tonnage"] += tonnage
+
+        summary["by_exercise"][exercise_name]["sets"] += 1
+        summary["by_exercise"][exercise_name]["reps"] += reps
+        summary["by_exercise"][exercise_name]["tonnage"] += tonnage
+
+    return summary
+
+
+def percent_change(current, previous):
+    if previous == 0:
+        return None
+    return ((current - previous) / previous) * 100.0
+
+
+def show_workload_change_report(days: int = 7) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+    cur.execute("SELECT MAX(date) FROM sessions")
+    row = cur.fetchone()
+    conn.close()
+
+    if not row or not row[0]:
+        print("\nNo sessions found.")
+        return
+
+    current_end = datetime.strptime(row[0], "%Y-%m-%d").date()
+    current_start = current_end - timedelta(days=days - 1)
+    previous_end = current_start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=days - 1)
+
+    current = summarize_strength_window(current_start, current_end)
+    previous = summarize_strength_window(previous_start, previous_end)
+
+    print("\n+++ WORKLOAD CHANGE REPORT +++")
+    print(f"Current window: {current_start} to {current_end}")
+    print(f"Previous window: {previous_start} to {previous_end}")
+
+    if current["sets"] == 0 and previous["sets"] == 0:
+        print("No strength data found in either window.")
+        return
+
+    total_change = percent_change(current["tonnage"], previous["tonnage"])
+
+    print("\nOverall:")
+    print(
+        f"- current: {current['sets']} sets, {current['reps']} reps, "
+        f"tonnage {format_load(current['tonnage'])}"
+    )
+    print(
+        f"- previous: {previous['sets']} sets, {previous['reps']} reps, "
+        f"tonnage {format_load(previous['tonnage'])}"
+    )
+
+    if total_change is None:
+        print("- total tonnage change: no prior workload to compare")
+    else:
+        print(f"- total tonnage change: {round(total_change, 1)}%")
+
+    exercise_names = sorted(set(current["by_exercise"].keys()) | set(previous["by_exercise"].keys()))
+
+    if exercise_names:
+        print("\nBy exercise:")
+        for exercise_name in exercise_names:
+            current_stats = current["by_exercise"].get(
+                exercise_name, {"sets": 0, "reps": 0, "tonnage": 0.0}
+            )
+            previous_stats = previous["by_exercise"].get(
+                exercise_name, {"sets": 0, "reps": 0, "tonnage": 0.0}
+            )
+
+            change = percent_change(current_stats["tonnage"], previous_stats["tonnage"])
+
+            line = (
+                f"- {exercise_name}: "
+                f"current {format_load(current_stats['tonnage'])} vs "
+                f"previous {format_load(previous_stats['tonnage'])}"
+            )
+
+            if change is None:
+                line += " | change: no prior workload"
+            else:
+                line += f" | change: {round(change, 1)}%"
+
+            print(line)
+
+    print("\nWorkload signals:")
+    if total_change is None:
+        print("- No previous window available for total workload comparison.")
+    elif total_change >= 30:
+        print("- Warning: total workload increased by 30% or more.")
+    elif total_change <= -30:
+        print("- Workload dropped by 30% or more.")
+    else:
+        print("- Total workload change is within a moderate range.")
+
+
 def delete_session_by_id(session_id: int) -> bool:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -1314,6 +1444,7 @@ def main() -> None:
     print("11) Show weekly movement report")
     print("12) Show training balance report")
     print("13) Backup database")
+    print("14) Show workload change report")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1383,6 +1514,9 @@ def main() -> None:
 
     elif choice == "13":
         backup_database()
+
+    elif choice == "14":
+        show_workload_change_report()
 
     else:
         print("Invalid choice.")
