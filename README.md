@@ -1,30 +1,71 @@
 # Deadlift Radio
 
-Deadlift Radio is a lightweight strength logging and archive engine for recording workouts, preserving training history, and analyzing progression over time.
+> Build → Record → Analyze → Ascend
 
-## Current MVP
+A terminal-based strength intelligence system for serious lifters.
+Deadlift Radio logs workouts, preserves training history, and analyzes
+tonnage, fatigue, readiness, and progression over time.
 
-- Log workouts from terminal input
-- Parse exercise names and set data
-- Store sessions in SQLite
-- Track historical lifting data
-- Show last session
-- Show PRs by exercise
+---
 
-## Example Input
+## Features
 
-Bench Press
-315 x 5
-335 x 3
-365 x 1
-275 x 8 x 2
-Left elbow irritated
-END
+- Log workouts from raw terminal input — no forms, no friction
+- Parse exercise names, sets, reps, and load automatically
+- Track estimated 1RM progression per exercise
+- Weekly tonnage, push/pull balance, and workload change reports
+- Fatigue analysis with training signals and recommendations
+- Readiness score — GREEN / YELLOW / RED before every session
+- Joint and tendon exposure tracking for injury prevention
+- Export sessions to Markdown
+- Generate strength progress graphs and training heatmaps
+- SQLite storage — no dependencies, no cloud, no bullshit
+
+---
+
+## Structure
+```
+deadlift-radio/
+├── main.py                  # Entry point
+├── db/                      # Schema and query layer
+├── ingestion/               # Workout log parser and ingest engine
+├── analytics/               # Tonnage, fatigue, readiness, exposure
+├── reports/                 # Graphs and markdown export
+├── cli/                     # Menu and display layer
+├── classification/          # Movement and exercise classification
+├── utils/                   # Spinner and shared utilities
+└── exports/                 # Generated graphs and session reports
+```
+
+---
 
 ## Run
+```bash
+python3 main.py
+```
 
-python3 deadlift_radio.py
+## Example Input
+```
+March 13 2026
+BW 185
+
+Bench
+135 x 8
+185 x 5
+225 x 3
+245 x 1
+
+T bar rows empty chest supported
+90 x 10 x 4
+
+Hammer curls db
+35 x 12 x 3
+```
+
+---
 
 ## Vision
 
-Build → Record → Analyze → Ascend
+Deadlift Radio is the data layer for a larger strength media system.
+Future modules: AI session summaries, automated video briefings, and
+social media exports via the AI Media Lab pipeline.
