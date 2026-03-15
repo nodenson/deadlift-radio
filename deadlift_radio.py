@@ -1738,7 +1738,8 @@ def main() -> None:
     print("14) Show workload change report")
     print("15) Show classification audit")
     print("16) Export session to Markdown")
-    print("17) Generate training graphs")
+    print("17) Training graph")
+    print("18) Show fatigue analysis")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1821,6 +1822,8 @@ def main() -> None:
     elif choice == "17":
         generate_training_graphs()
 
+    elif choice == "18":
+        show_fatigue_analysis()
     else:
         print("Invalid choice.")
 
@@ -1972,5 +1975,334 @@ def show_training_balance_report(days: int = 7) -> None:
     else:
         print("- No push or pull work found.")
 
+
+
+
+def get_current_and_previous_strength_windows(days: int = 7) -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT MAX(date) FROM sessions")
+    row = cur.fetchone()
+    if not row or not row[0]:
+        conn.close()
+        return {
+            "current_total_tonnage": 0.0,
+            "previous_total_tonnage": 0.0,
+            "current_start": None,
+            "current_end": None,
+            "previous_start": None,
+            "previous_end": None,
+        }
+
+    end_date = datetime.strptime(row[0], "%Y-%m-%d").date()
+    current_start = end_date - timedelta(days=days - 1)
+    previous_end = current_start - timedelta(days=1)
+    previous_start = previous_end - timedelta(days=days - 1)
+
+    cur.execute("""
+        SELECT COALESCE(SUM(st.load * st.reps), 0)
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        JOIN sessions sess ON ex.session_id = sess.id
+        WHERE date(sess.date) BETWEEN date(?) AND date(?)
+    """, (current_start.isoformat(), end_date.isoformat()))
+    current_total = float(cur.fetchone()[0] or 0)
+
+    cur.execute("""
+        SELECT COALESCE(SUM(st.load * st.reps), 0)
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        JOIN sessions sess ON ex.session_id = sess.id
+        WHERE date(sess.date) BETWEEN date(?) AND date(?)
+    """, (previous_start.isoformat(), previous_end.isoformat()))
+    previous_total = float(cur.fetchone()[0] or 0)
+
+    conn.close()
+    return {
+        "current_total_tonnage": current_total,
+        "previous_total_tonnage": previous_total,
+        "current_start": current_start.isoformat(),
+        "current_end": end_date.isoformat(),
+        "previous_start": previous_start.isoformat(),
+        "previous_end": previous_end.isoformat(),
+    }
+
+
+def get_current_balance_snapshot(days: int = 7) -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT MAX(date) FROM sessions")
+    row = cur.fetchone()
+    if not row or not row[0]:
+        conn.close()
+        return {"push_sets": 0, "pull_sets": 0}
+
+    end_date = datetime.strptime(row[0], "%Y-%m-%d").date()
+    start_date = end_date - timedelta(days=days - 1)
+
+    cur.execute("""
+        SELECT LOWER(COALESCE(movement, '')), COUNT(*)
+        FROM exposures e
+        JOIN sessions sess ON e.session_id = sess.id
+        WHERE date(sess.date) BETWEEN date(?) AND date(?)
+        GROUP BY LOWER(COALESCE(movement, ''))
+    """, (start_date.isoformat(), end_date.isoformat()))
+    rows = cur.fetchall()
+    conn.close()
+
+    push_keys = {"horizontal_push", "vertical_push", "push"}
+    pull_keys = {"horizontal_pull", "vertical_pull", "pull"}
+
+    push_sets = sum(count for movement, count in rows if movement in push_keys)
+    pull_sets = sum(count for movement, count in rows if movement in pull_keys)
+
+    return {
+        "push_sets": int(push_sets),
+        "pull_sets": int(pull_sets),
+    }
+
+
+def get_current_exposure_snapshot(days: int = 7) -> dict:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT MAX(date) FROM sessions")
+    row = cur.fetchone()
+    if not row or not row[0]:
+        conn.close()
+        return {
+            "elbow_extension_score": 0,
+            "elbow_flexion_pull_score": 0,
+            "forearm_total_score": 0,
+            "forearm_max_day_score": 0,
+        }
+
+    end_date = datetime.strptime(row[0], "%Y-%m-%d").date()
+    start_date = end_date - timedelta(days=days - 1)
+
+    cur.execute("""
+        SELECT
+            sess.date,
+            LOWER(COALESCE(e.movement, '')) AS movement,
+            LOWER(COALESCE(e.implement, '')) AS implement,
+            COALESCE(e.reps, 0),
+            COALESCE(e.seconds, 0),
+            COALESCE(e.load, 0),
+            LOWER(COALESCE(e.notes, '')) AS notes
+        FROM exposures e
+        JOIN sessions sess ON e.session_id = sess.id
+        WHERE date(sess.date) BETWEEN date(?) AND date(?)
+    """, (start_date.isoformat(), end_date.isoformat()))
+    rows = cur.fetchall()
+    conn.close()
+
+    extension_score = 0
+    flexion_pull_score = 0
+    day_scores = {}
+
+    for session_date, movement, implement, reps, seconds, load, notes in rows:
+        movement = movement or ""
+        implement = implement or ""
+        notes = notes or ""
+
+        # elbow extension stress
+        if movement in {"horizontal_push", "vertical_push", "push", "elbow_extension"}:
+            extension_score += 1
+        if "tricep" in implement or "tricep" in notes:
+            extension_score += 1
+        if "extension" in movement or "extension" in notes:
+            extension_score += 1
+
+        # balancing pull / flexion stress
+        if movement in {"horizontal_pull", "vertical_pull", "pull", "elbow_flexion"}:
+            flexion_pull_score += 1
+        if "bicep" in implement or "bicep" in notes:
+            flexion_pull_score += 1
+        if "flexion" in movement or "flexion" in notes:
+            flexion_pull_score += 1
+
+        # forearm density
+        forearm_points = 0
+        if movement in {"support_grip", "crush_grip", "pronation_supination", "lever"}:
+            forearm_points += 1
+        if any(term in implement for term in ["grip", "gripper", "pronation", "supination", "lever", "wrist", "forearm"]):
+            forearm_points += 1
+        if any(term in notes for term in ["grip", "gripper", "pronation", "supination", "lever", "wrist", "forearm"]):
+            forearm_points += 1
+
+        if forearm_points:
+            day_scores[session_date] = day_scores.get(session_date, 0) + forearm_points
+
+    forearm_total = sum(day_scores.values())
+    forearm_max_day = max(day_scores.values()) if day_scores else 0
+
+    return {
+        "elbow_extension_score": int(extension_score),
+        "elbow_flexion_pull_score": int(flexion_pull_score),
+        "forearm_total_score": int(forearm_total),
+        "forearm_max_day_score": int(forearm_max_day),
+    }
+
+
+def analyze_training_signals(days: int = 7) -> list[dict]:
+    strength = get_current_and_previous_strength_windows(days)
+    balance = get_current_balance_snapshot(days)
+    exposure = get_current_exposure_snapshot(days)
+
+    signals = []
+
+    current_tonnage = strength.get("current_total_tonnage", 0.0)
+    previous_tonnage = strength.get("previous_total_tonnage", 0.0)
+
+    if previous_tonnage > 0:
+        change_pct = ((current_tonnage - previous_tonnage) / previous_tonnage) * 100.0
+        if change_pct > 30:
+            signals.append({
+                "name": "workload_spike",
+                "severity": "warning",
+                "message": f"Total workload increased by {change_pct:.1f}%.",
+                "details": {
+                    "current_total_tonnage": round(current_tonnage, 1),
+                    "previous_total_tonnage": round(previous_tonnage, 1),
+                    "change_pct": round(change_pct, 1),
+                }
+            })
+    else:
+        signals.append({
+            "name": "no_prior_workload_window",
+            "severity": "warning",
+            "message": "No prior workload window available for comparison.",
+            "details": {}
+        })
+
+    push_sets = balance.get("push_sets", 0)
+    pull_sets = balance.get("pull_sets", 0)
+
+    if pull_sets > 0:
+        ratio = push_sets / pull_sets
+        if ratio > 2.0:
+            signals.append({
+                "name": "push_pull_imbalance",
+                "severity": "warning",
+                "message": f"Push volume exceeds pull volume by {ratio:.2f}x.",
+                "details": {
+                    "push_sets": push_sets,
+                    "pull_sets": pull_sets,
+                    "ratio": round(ratio, 2),
+                }
+            })
+    elif push_sets > 0:
+        signals.append({
+            "name": "push_pull_imbalance",
+            "severity": "warning",
+            "message": "Push volume is present but no pulling volume was recorded.",
+            "details": {
+                "push_sets": push_sets,
+                "pull_sets": pull_sets,
+            }
+        })
+
+    extension_score = exposure.get("elbow_extension_score", 0)
+    flexion_pull_score = exposure.get("elbow_flexion_pull_score", 0)
+
+    if extension_score >= 8 and flexion_pull_score > 0:
+        ratio = extension_score / flexion_pull_score
+        if ratio > 2.0:
+            signals.append({
+                "name": "elbow_extension_overload",
+                "severity": "warning",
+                "message": "Elbow extension stress is elevated relative to pulling/flexion work.",
+                "details": {
+                    "extension_score": extension_score,
+                    "flexion_pull_score": flexion_pull_score,
+                    "ratio": round(ratio, 2),
+                }
+            })
+    elif extension_score >= 8 and flexion_pull_score == 0:
+        signals.append({
+            "name": "elbow_extension_overload",
+            "severity": "warning",
+            "message": "Elbow extension stress is elevated with little or no balancing pull/flexion work.",
+            "details": {
+                "extension_score": extension_score,
+                "flexion_pull_score": flexion_pull_score,
+            }
+        })
+
+    forearm_total = exposure.get("forearm_total_score", 0)
+    forearm_max_day = exposure.get("forearm_max_day_score", 0)
+
+    if forearm_total > 0:
+        cluster_ratio = forearm_max_day / forearm_total
+        if forearm_total >= 8 and cluster_ratio >= 0.6:
+            signals.append({
+                "name": "forearm_density",
+                "severity": "warning",
+                "message": "Forearm exposure is highly concentrated.",
+                "details": {
+                    "forearm_total_score": forearm_total,
+                    "forearm_max_day_score": forearm_max_day,
+                    "cluster_ratio": round(cluster_ratio, 2),
+                }
+            })
+
+    return signals[:5]
+
+
+def generate_signal_recommendations(signals: list[dict]) -> list[str]:
+    recommendations = []
+    names = {s["name"] for s in signals}
+
+    if "workload_spike" in names:
+        recommendations.append("Consider holding or slightly reducing total workload next week.")
+    if "push_pull_imbalance" in names:
+        recommendations.append("Add more rowing, rear-delt, or other pulling volume to improve balance.")
+    if "elbow_extension_overload" in names:
+        recommendations.append("Reduce triceps isolation or pressing accessories if elbow irritation rises.")
+    if "forearm_density" in names:
+        recommendations.append("Spread grip and forearm work across more sessions to improve recovery.")
+    if "no_prior_workload_window" in names and not recommendations:
+        recommendations.append("Log another full week so workload comparison can begin.")
+    if not recommendations:
+        recommendations.append("No major fatigue or balance flags detected in this window.")
+
+    return recommendations[:5]
+
+
+def show_fatigue_analysis(days: int = 7) -> None:
+    strength = get_current_and_previous_strength_windows(days)
+    signals = analyze_training_signals(days)
+    recommendations = generate_signal_recommendations(signals)
+
+    start_date = strength.get("current_start")
+    end_date = strength.get("current_end")
+
+    print("\n+++ FATIGUE ANALYSIS +++")
+    if start_date and end_date:
+        print(f"Window: {start_date} to {end_date}")
+
+    print("\nSignals:")
+    if signals:
+        for s in signals:
+            severity = s.get("severity", "info").capitalize()
+            print(f"- {severity}: {s['message']}")
+    else:
+        print("- No major warning signals detected.")
+
+    print("\nRecommendations:")
+    for rec in recommendations:
+        print(f"- {rec}")
+    print()
+
+
 if __name__ == "__main__":
     main()
+
+
+def show_fatigue_analysis(days: int = 7) -> None:
+    print("\n+++ FATIGUE ANALYSIS +++")
+    print("Signal engine not implemented yet.")
+    print("Architecture layer installed.")
+    print()
