@@ -1,7 +1,15 @@
+# Databases
 *.db
+
+# Manual backups
 *.pre_*
+
+# Python cache
 __pycache__/
 *.pyc
+
+# Generated outputs
 exports/
 *.png
-*.md.bak
+*.md
+!README.md
