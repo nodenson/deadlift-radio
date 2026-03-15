@@ -26,6 +26,36 @@ def classify_exercise_movement(name: str) -> str:
     return EXERCISE_MOVEMENTS.get(name, "other")
 
 import sqlite3
+
+# --- Grimdark Spinner -------------------------------------------------
+
+import sys
+import time
+import threading
+
+def grimdark_spinner(message: str, stop_event) -> None:
+    symbols = ["[☠]", "[⚙]", "[✠]", "[☢]"]
+    i = 0
+    while not stop_event.is_set():
+        sys.stdout.write(f"\r+++ {message} +++ {symbols[i % len(symbols)]}")
+        sys.stdout.flush()
+        time.sleep(0.12)
+        i += 1
+    sys.stdout.write("\r" + " " * (len(message) + 25) + "\r")
+    sys.stdout.flush()
+
+def run_with_grimdark_spinner(message: str, fn, *args, **kwargs):
+    stop_event = threading.Event()
+    thread = threading.Thread(target=grimdark_spinner, args=(message, stop_event))
+    thread.start()
+    try:
+        return fn(*args, **kwargs)
+    finally:
+        stop_event.set()
+        thread.join()
+
+# ----------------------------------------------------------------------
+
 import re
 from datetime import datetime, timedelta
 import os
@@ -503,6 +533,132 @@ def export_session_to_markdown_prompt() -> None:
         print("Invalid session ID.")
         return
     export_session_to_markdown(int(raw))
+
+
+def _generate_training_graphs_inner() -> None:
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    # Bench progress
+    cur.execute("""
+        SELECT s.date, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        WHERE ex.name = 'Bench'
+        ORDER BY s.date, st.id
+    """)
+    bench_rows = cur.fetchall()
+
+    if bench_rows:
+        dates = []
+        e1rms = []
+        for session_date, load, reps in bench_rows:
+            dates.append(session_date)
+            e1rms.append(estimate_e1rm(load, reps))
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(dates, e1rms, marker='o')
+        plt.title("Bench Estimated 1RM Over Time")
+        plt.xlabel("Date")
+        plt.ylabel("Estimated 1RM")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig("bench_progress.png")
+        plt.close()
+
+    # Weekly tonnage
+    cur.execute("""
+        SELECT s.date, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        ORDER BY s.date, st.id
+    """)
+    all_rows = cur.fetchall()
+
+    weekly_tonnage = {}
+    for session_date, load, reps in all_rows:
+        dt = datetime.strptime(session_date, "%Y-%m-%d").date()
+        week_start = dt - timedelta(days=dt.weekday())
+        weekly_tonnage.setdefault(str(week_start), 0.0)
+        weekly_tonnage[str(week_start)] += load * reps
+
+    if weekly_tonnage:
+        weeks = sorted(weekly_tonnage.keys())
+        tonnages = [weekly_tonnage[w] for w in weeks]
+
+        plt.figure(figsize=(10, 5))
+        plt.bar(weeks, tonnages)
+        plt.title("Weekly Tonnage")
+        plt.xlabel("Week Starting")
+        plt.ylabel("Tonnage")
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        plt.savefig("weekly_tonnage.png")
+        plt.close()
+
+    # Push vs pull balance by week
+    cur.execute("""
+        SELECT s.date, ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        ORDER BY s.date, st.id
+    """)
+    movement_rows = cur.fetchall()
+
+    weekly_push = {}
+    weekly_pull = {}
+
+    for session_date, exercise_name, load, reps in movement_rows:
+        dt = datetime.strptime(session_date, "%Y-%m-%d").date()
+        week_start = str(dt - timedelta(days=dt.weekday()))
+        movement = classify_exercise_movement(exercise_name)
+
+        weekly_push.setdefault(week_start, 0)
+        weekly_pull.setdefault(week_start, 0)
+
+        if movement in {"horizontal_press", "incline_press", "elbow_extension", "lateral_raise"}:
+            weekly_push[week_start] += 1
+
+        if movement in {"row", "rear_delt", "elbow_flexion"}:
+            weekly_pull[week_start] += 1
+
+    weeks = sorted(set(weekly_push.keys()) | set(weekly_pull.keys()))
+    if weeks:
+        push_values = [weekly_push.get(w, 0) for w in weeks]
+        pull_values = [weekly_pull.get(w, 0) for w in weeks]
+
+        x = range(len(weeks))
+        width = 0.4
+
+        plt.figure(figsize=(10, 5))
+        plt.bar([i - width / 2 for i in x], push_values, width=width, label="Push")
+        plt.bar([i + width / 2 for i in x], pull_values, width=width, label="Pull")
+        plt.title("Weekly Push vs Pull Set Count")
+        plt.xlabel("Week Starting")
+        plt.ylabel("Set Count")
+        plt.xticks(list(x), weeks, rotation=45)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig("push_pull_balance.png")
+        plt.close()
+
+    conn.close()
+
+    print("\n+++ TRAINING GRAPHS GENERATED +++")
+    for name in ["bench_progress.png", "weekly_tonnage.png", "push_pull_balance.png"]:
+        if Path(name).exists():
+            print(f"- {name}")
+
+def generate_training_graphs() -> None:
+    run_with_grimdark_spinner("FORGING IRON RECORDS", _generate_training_graphs_inner)
+
 
 
 def infer_session_metadata(raw_text: str, bodyweight=None, session_date=None):
@@ -1540,7 +1696,7 @@ def delete_session_prompt() -> None:
         print("Could not delete session.")
 
 
-def backup_database() -> None:
+def _backup_database_inner() -> None:
     db_file = Path(DB_PATH)
     if not db_file.exists():
         print(f"\nDatabase file not found: {DB_PATH}")
@@ -1555,6 +1711,10 @@ def backup_database() -> None:
     print("\n+++ DATABASE BACKUP CREATED +++")
     print(f"Source: {db_file}")
     print(f"Backup: {backup_path}")
+
+def backup_database() -> None:
+    run_with_grimdark_spinner("SANCTIFYING DATA-SLATES", _backup_database_inner)
+
 
 
 def main() -> None:
@@ -1578,6 +1738,7 @@ def main() -> None:
     print("14) Show workload change report")
     print("15) Show classification audit")
     print("16) Export session to Markdown")
+    print("17) Generate training graphs")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1656,6 +1817,9 @@ def main() -> None:
 
     elif choice == "16":
         export_session_to_markdown_prompt()
+
+    elif choice == "17":
+        generate_training_graphs()
 
     else:
         print("Invalid choice.")
