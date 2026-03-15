@@ -403,6 +403,108 @@ def show_classification_audit() -> None:
         print(f"    inferred exposure: {inferred_text}")
 
 
+def export_session_to_markdown(session_id: int) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, date, bodyweight, notes
+        FROM sessions
+        WHERE id = ?
+    """, (session_id,))
+    session = cur.fetchone()
+
+    if not session:
+        print(f"\nSession #{session_id} not found.")
+        conn.close()
+        return
+
+    session_id, date, bodyweight, notes = session
+
+    cur.execute("""
+        SELECT movement, implement, reps, seconds, load
+        FROM exposures
+        WHERE session_id = ?
+        ORDER BY id
+    """, (session_id,))
+    exposures = cur.fetchall()
+
+    cur.execute("""
+        SELECT id, name
+        FROM exercises
+        WHERE session_id = ?
+        ORDER BY id
+    """, (session_id,))
+    exercises = cur.fetchall()
+
+    lines = []
+    lines.append(f"# Deadlift Radio Session {session_id}")
+    lines.append("")
+    lines.append(f"- Date: {date}")
+    lines.append(f"- Bodyweight: {bodyweight}")
+    lines.append("")
+
+    if notes:
+        lines.append("## Notes")
+        lines.append("")
+        for line in notes.splitlines():
+            lines.append(f"- {line}")
+        lines.append("")
+
+    if exposures:
+        lines.append("## Exposure")
+        lines.append("")
+        for movement, implement, reps, seconds, load in exposures:
+            parts = [movement]
+            if implement:
+                parts.append(f"via {implement}")
+            if reps is not None:
+                parts.append(f"{reps} reps")
+            if seconds is not None:
+                parts.append(f"{seconds} sec")
+            if load is not None:
+                parts.append(f"load {format_load(load)}")
+            lines.append(f"- {' | '.join(parts)}")
+        lines.append("")
+
+    if exercises:
+        lines.append("## Exercises")
+        lines.append("")
+        for ex_id, ex_name in exercises:
+            lines.append(f"### {ex_name}")
+            lines.append("")
+            cur.execute("""
+                SELECT load, reps
+                FROM sets
+                WHERE exercise_id = ?
+                ORDER BY id
+            """, (ex_id,))
+            sets = cur.fetchall()
+
+            for load, reps in sets:
+                lines.append(f"- {format_load(load)} x {reps}")
+            lines.append("")
+
+    conn.close()
+
+    safe_date = date.replace("-", "")
+    output_name = f"session_{session_id}_{safe_date}.md"
+    output_path = Path(output_name)
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+    print("\n+++ SESSION MARKDOWN EXPORTED +++")
+    print(f"Session ID: {session_id}")
+    print(f"File: {output_path}")
+
+
+def export_session_to_markdown_prompt() -> None:
+    raw = input("Enter session ID to export: ").strip()
+    if not raw.isdigit():
+        print("Invalid session ID.")
+        return
+    export_session_to_markdown(int(raw))
+
+
 def infer_session_metadata(raw_text: str, bodyweight=None, session_date=None):
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
     if not lines:
@@ -1475,6 +1577,7 @@ def main() -> None:
     print("13) Backup database")
     print("14) Show workload change report")
     print("15) Show classification audit")
+    print("16) Export session to Markdown")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1550,6 +1653,9 @@ def main() -> None:
 
     elif choice == "15":
         show_classification_audit()
+
+    elif choice == "16":
+        export_session_to_markdown_prompt()
 
     else:
         print("Invalid choice.")
