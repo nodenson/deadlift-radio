@@ -886,6 +886,136 @@ def show_weekly_exposure_report(days: int = 7) -> None:
     conn.close()
 
 
+def show_weekly_strength_report(days: int = 7) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT MAX(date) FROM sessions")
+    max_date_row = cur.fetchone()
+    if not max_date_row or not max_date_row[0]:
+        print("\nNo sessions found.")
+        conn.close()
+        return
+
+    anchor_date = datetime.strptime(max_date_row[0], "%Y-%m-%d").date()
+    start_date = anchor_date - timedelta(days=days - 1)
+
+    cur.execute("""
+        SELECT s.date, ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        WHERE s.date >= ? AND s.date <= ?
+        ORDER BY s.date, ex.name, st.id
+    """, (start_date.isoformat(), anchor_date.isoformat()))
+    rows = cur.fetchall()
+
+    print("\n+++ WEEKLY IRON REPORT +++")
+    print(f"Window: {start_date.isoformat()} to {anchor_date.isoformat()}")
+
+    if not rows:
+        print("No strength data found in this window.")
+        conn.close()
+        return
+
+    total_sets = 0
+    total_reps = 0
+    total_tonnage = 0.0
+    by_exercise = {}
+    daily_totals = {}
+
+    for session_date, exercise_name, load, reps in rows:
+        if exercise_name not in by_exercise:
+            by_exercise[exercise_name] = {
+                "sets": 0,
+                "reps": 0,
+                "tonnage": 0.0,
+                "top_load": 0.0,
+                "best_e1rm": 0.0,
+                "best_set": None,
+            }
+
+        if session_date not in daily_totals:
+            daily_totals[session_date] = {
+                "sets": 0,
+                "reps": 0,
+                "tonnage": 0.0,
+            }
+
+        tonnage = load * reps
+        e1rm = estimate_e1rm(load, reps)
+
+        by_exercise[exercise_name]["sets"] += 1
+        by_exercise[exercise_name]["reps"] += reps
+        by_exercise[exercise_name]["tonnage"] += tonnage
+        by_exercise[exercise_name]["top_load"] = max(by_exercise[exercise_name]["top_load"], load)
+
+        if e1rm > by_exercise[exercise_name]["best_e1rm"]:
+            by_exercise[exercise_name]["best_e1rm"] = e1rm
+            by_exercise[exercise_name]["best_set"] = (load, reps)
+
+        total_sets += 1
+        total_reps += reps
+        total_tonnage += tonnage
+
+        daily_totals[session_date]["sets"] += 1
+        daily_totals[session_date]["reps"] += reps
+        daily_totals[session_date]["tonnage"] += tonnage
+
+    peak_exercise = None
+    peak_e1rm = 0.0
+    peak_set = None
+
+    for exercise_name, stats in by_exercise.items():
+        if stats["best_e1rm"] > peak_e1rm:
+            peak_exercise = exercise_name
+            peak_e1rm = stats["best_e1rm"]
+            peak_set = stats["best_set"]
+
+    print(f"Total sets: {total_sets}")
+    print(f"Total reps: {total_reps}")
+    print(f"Total iron moved: {format_load(total_tonnage)}")
+
+    print("\nBy exercise:")
+    for exercise_name, stats in sorted(by_exercise.items()):
+        line = (
+            f"- {exercise_name}: "
+            f"{stats['sets']} sets, "
+            f"{stats['reps']} reps, "
+            f"tonnage {format_load(stats['tonnage'])}, "
+            f"top load {format_load(stats['top_load'])}"
+        )
+
+        if stats["best_set"] is not None and stats["best_e1rm"] > 0:
+            load, reps = stats["best_set"]
+            line += (
+                f", best e1rm {format_load(stats['best_e1rm'])} "
+                f"from {format_load(load)} x {reps}"
+            )
+
+        print(line)
+
+    if peak_exercise and peak_set:
+        print("\nPeak strength signal:")
+        print(
+            f"{peak_exercise} — "
+            f"{format_load(peak_set[0])} x {peak_set[1]} "
+            f"-> estimated 1RM {format_load(peak_e1rm)}"
+        )
+
+    print("\nDaily iron totals:")
+    for session_date in sorted(daily_totals.keys()):
+        stats = daily_totals[session_date]
+        print(
+            f"- {session_date}: "
+            f"{stats['sets']} sets, "
+            f"{stats['reps']} reps, "
+            f"tonnage {format_load(stats['tonnage'])}"
+        )
+
+    conn.close()
+
+
 def delete_session_by_id(session_id: int) -> bool:
     conn = sqlite3.connect(DB_PATH)
     cur = conn.cursor()
@@ -1112,6 +1242,7 @@ def main() -> None:
     print("7) Show recent sessions")
     print("8) Inspect session by ID")
     print("9) Delete session by ID")
+    print("10) Show weekly strength report")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1169,6 +1300,9 @@ def main() -> None:
 
     elif choice == "9":
         delete_session_prompt()
+
+    elif choice == "10":
+        show_weekly_strength_report()
 
     else:
         print("Invalid choice.")
