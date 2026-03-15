@@ -1,3 +1,29 @@
+
+
+# --- Movement classification system ---
+
+EXERCISE_MOVEMENTS = {
+    "Bench": "horizontal_press",
+    "Incline dumbbell": "incline_press",
+
+    "Hammer curls db": "elbow_flexion",
+
+    "Triceps extensions ez bar": "elbow_extension",
+    "reverse triceps extensions cable": "elbow_extension",
+
+    "T bar rows empty chest supported": "row",
+
+    "Machine rear deltoids": "rear_delt",
+
+    "Side deltoid raises machine": "lateral_raise",
+
+    "Pushups": "horizontal_press",
+}
+
+
+def classify_exercise_movement(name: str) -> str:
+    return EXERCISE_MOVEMENTS.get(name, "other")
+
 import sqlite3
 import re
 from datetime import datetime, timedelta
@@ -1266,6 +1292,7 @@ def main() -> None:
     print("8) Inspect session by ID")
     print("9) Delete session by ID")
     print("10) Show weekly strength report")
+    print("11) Show weekly movement report")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1327,9 +1354,66 @@ def main() -> None:
     elif choice == "10":
         show_weekly_strength_report()
 
+    elif choice == "11":
+        show_weekly_movement_report()
+
     else:
         print("Invalid choice.")
 
+
+def show_weekly_movement_report(days: int = 7) -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("SELECT MAX(date) FROM sessions")
+    row = cur.fetchone()
+
+    if not row or not row[0]:
+        print("\nNo sessions found.")
+        conn.close()
+        return
+
+    anchor_date = datetime.strptime(row[0], "%Y-%m-%d").date()
+    start_date = anchor_date - timedelta(days=days - 1)
+
+    cur.execute("""
+        SELECT s.date, ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON ex.id = st.exercise_id
+        JOIN sessions s ON s.id = ex.session_id
+        WHERE s.date >= ? AND s.date <= ?
+    """, (start_date.isoformat(), anchor_date.isoformat()))
+
+    rows = cur.fetchall()
+
+    print("\n+++ WEEKLY MOVEMENT REPORT +++")
+    print(f"Window: {start_date} to {anchor_date}")
+
+    movement_totals = {}
+
+    for session_date, exercise_name, load, reps in rows:
+        movement = classify_exercise_movement(exercise_name)
+
+        if movement not in movement_totals:
+            movement_totals[movement] = {
+                "sets": 0,
+                "reps": 0,
+                "tonnage": 0
+            }
+
+        movement_totals[movement]["sets"] += 1
+        movement_totals[movement]["reps"] += reps
+        movement_totals[movement]["tonnage"] += load * reps
+
+    for movement, stats in sorted(movement_totals.items()):
+        print(
+            f"- {movement}: "
+            f"{stats['sets']} sets, "
+            f"{stats['reps']} reps, "
+            f"tonnage {format_load(stats['tonnage'])}"
+        )
+
+    conn.close()
 
 if __name__ == "__main__":
     main()
