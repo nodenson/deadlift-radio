@@ -1,3 +1,4 @@
+from pathlib import Path
 
 
 # --- Movement classification system ---
@@ -28,6 +29,7 @@ import sqlite3
 import re
 from datetime import datetime, timedelta
 import os
+import shutil
 
 DB_PATH = os.getenv("DLR_DB_PATH", "archive_dev.db")
 
@@ -1277,6 +1279,23 @@ def delete_session_prompt() -> None:
         print("Could not delete session.")
 
 
+def backup_database() -> None:
+    db_file = Path(DB_PATH)
+    if not db_file.exists():
+        print(f"\nDatabase file not found: {DB_PATH}")
+        return
+
+    timestamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    backup_name = f"{db_file.stem}_backup_{timestamp}{db_file.suffix}"
+    backup_path = db_file.parent / backup_name
+
+    shutil.copy2(db_file, backup_path)
+
+    print("\n+++ DATABASE BACKUP CREATED +++")
+    print(f"Source: {db_file}")
+    print(f"Backup: {backup_path}")
+
+
 def main() -> None:
     init_db()
 
@@ -1294,6 +1313,7 @@ def main() -> None:
     print("10) Show weekly strength report")
     print("11) Show weekly movement report")
     print("12) Show training balance report")
+    print("13) Backup database")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1360,6 +1380,9 @@ def main() -> None:
 
     elif choice == "12":
         show_training_balance_report()
+
+    elif choice == "13":
+        backup_database()
 
     else:
         print("Invalid choice.")
