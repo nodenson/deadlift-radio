@@ -1,11 +1,7 @@
+*.db
+*.pre_*
 __pycache__/
 *.pyc
-*.db
-*.sqlite
-*.sqlite3
-.env
-venv/
-*.pre_*
-*.pre_*
+exports/
 *.png
-session_*.md
+*.md.bak
