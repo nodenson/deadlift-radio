@@ -374,6 +374,35 @@ def infer_exposure_movements(exercise_name: str):
     return exposure_map.get(name, [])
 
 
+def show_classification_audit() -> None:
+    conn = sqlite3.connect(DB_PATH)
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT DISTINCT name
+        FROM exercises
+        ORDER BY name
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    print("\n+++ CLASSIFICATION AUDIT +++")
+
+    if not rows:
+        print("No exercises found.")
+        return
+
+    for (exercise_name,) in rows:
+        movement = classify_exercise_movement(exercise_name)
+        inferred = infer_exposure_movements(exercise_name)
+
+        inferred_text = ", ".join(inferred) if inferred else "(none)"
+
+        print(f"- {exercise_name}")
+        print(f"    movement: {movement}")
+        print(f"    inferred exposure: {inferred_text}")
+
+
 def infer_session_metadata(raw_text: str, bodyweight=None, session_date=None):
     lines = [line.strip() for line in raw_text.splitlines() if line.strip()]
     if not lines:
@@ -1445,6 +1474,7 @@ def main() -> None:
     print("12) Show training balance report")
     print("13) Backup database")
     print("14) Show workload change report")
+    print("15) Show classification audit")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -1517,6 +1547,9 @@ def main() -> None:
 
     elif choice == "14":
         show_workload_change_report()
+
+    elif choice == "15":
+        show_classification_audit()
 
     else:
         print("Invalid choice.")
