@@ -211,6 +211,19 @@ def parse_weight_only_line(line: str, pending_reps_hint):
     return ("LOAD_HINT", load)
 
 
+def looks_like_set_attempt(line: str) -> bool:
+    text = line.strip().lower()
+    if not text:
+        return False
+
+    return (
+        any(ch.isdigit() for ch in text)
+        or "x" in text
+        or "rep" in text
+        or "lb" in text
+    )
+
+
 def looks_like_metadata(line: str) -> bool:
     lower = line.strip().lower()
     month_prefixes = (
@@ -748,17 +761,19 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
     session_id = cur.lastrowid
 
     current_exercise_id = None
+    current_exercise_name = None
     session_notes = []
     current_load_hint = None
     pending_reps_hint = None
 
     def create_exercise(name: str):
-        nonlocal current_exercise_id, current_load_hint, pending_reps_hint
+        nonlocal current_exercise_id, current_exercise_name, current_load_hint, pending_reps_hint
         cur.execute(
             "INSERT INTO exercises (session_id, name) VALUES (?, ?)",
             (session_id, name)
         )
         current_exercise_id = cur.lastrowid
+        current_exercise_name = name
         current_load_hint = None
         pending_reps_hint = None
 
@@ -833,6 +848,14 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
                 current_load_hint = float(parsed_sets[1])
             else:
                 insert_sets(parsed_sets)
+            continue
+
+        if current_exercise_id is not None and looks_like_set_attempt(line):
+            print("\n+++ LOG VALIDATION WARNING +++")
+            print(f"Exercise: {current_exercise_name}")
+            print("Set entry could not be parsed")
+            print(f"Line ignored: {line}")
+            session_notes.append(f"Validation warning for {current_exercise_name}: ignored line: {line}")
             continue
 
         reps_first_heading = parse_reps_first_exercise_heading(line)
