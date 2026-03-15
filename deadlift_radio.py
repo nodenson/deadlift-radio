@@ -1,4 +1,13 @@
+import sqlite3
 from pathlib import Path
+import sqlite3
+import datetime
+import os
+import re
+import shutil
+import sys
+import threading
+import time
 
 
 # --- Movement classification system ---
@@ -25,7 +34,6 @@ EXERCISE_MOVEMENTS = {
 def classify_exercise_movement(name: str) -> str:
     return EXERCISE_MOVEMENTS.get(name, "other")
 
-import sqlite3
 
 # --- Grimdark Spinner -------------------------------------------------
 
@@ -869,6 +877,10 @@ def show_last_session() -> None:
         return
 
     session_id, date, bodyweight, notes = session
+
+
+
+
     print(f"\n+++ DEADLIFT RADIO ARCHIVE ENGINE +++")
     print("Build → Record → Analyze → Ascend")
     print(f"\n=== LAST SESSION ===")
@@ -1720,6 +1732,10 @@ def backup_database() -> None:
 def main() -> None:
     init_db()
 
+
+
+
+
     print("+++ DEADLIFT RADIO ARCHIVE ENGINE +++")
     print("Build → Record → Analyze → Ascend")
     print("1) Log workout")
@@ -1829,6 +1845,10 @@ def main() -> None:
         show_readiness_score()
     else:
         print("Invalid choice.")
+
+
+
+
 
 
 def show_weekly_movement_report(days: int = 7) -> None:
@@ -2300,8 +2320,14 @@ def show_fatigue_analysis(days: int = 7) -> None:
     print()
 
 
-if __name__ == "__main__":
-    main()
+
+
+
+
+
+
+
+
 
 
 def show_fatigue_analysis(days: int = 7) -> None:
@@ -2309,6 +2335,69 @@ def show_fatigue_analysis(days: int = 7) -> None:
     print("Signal engine not implemented yet.")
     print("Architecture layer installed.")
     print()
+def parse_session_date(value):
+    try:
+        return datetime.date.fromisoformat(str(value)[:10])
+    except Exception:
+        return None
+
+
+def get_all_sessions():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.id, s.date, e.name
+        FROM sessions s
+        LEFT JOIN exercises e ON e.session_id = s.id
+        ORDER BY s.date, s.id, e.id
+    """)
+    rows = cur.fetchall()
+    conn.close()
+
+    sessions = {}
+    for row in rows:
+        sid = row["id"]
+        if sid not in sessions:
+            sessions[sid] = {"id": sid, "date": row["date"], "exercises": []}
+        if row["name"]:
+            sessions[sid]["exercises"].append(row["name"])
+    return list(sessions.values())
+
+
+def estimate_session_workload(session):
+    exercises = session.get("exercises", [])
+    return len(exercises)
+
+
+def classify_session(session):
+    names = [str(x).lower() for x in session.get("exercises", [])]
+    if not names:
+        return "other"
+
+    deadlift_hits = sum(1 for n in names if "deadlift" in n)
+    lower_hits = sum(
+        1 for n in names
+        if any(k in n for k in (
+            "squat", "leg press", "leg curl", "leg extension",
+            "romanian", "rdl", "lunge", "hamstring", "quad", "calf"
+        ))
+    )
+    bench_hits = sum(
+        1 for n in names
+        if any(k in n for k in (
+            "bench", "incline", "pushup", "dip", "chest press", "triceps"
+        ))
+    )
+
+    if deadlift_hits:
+        return "deadlift"
+    if lower_hits >= 2:
+        return "lower"
+    if bench_hits >= 1:
+        return "bench"
+    return "upper"
+
 def show_readiness_score():
     print("\n+++ TRAINING READINESS +++")
 
@@ -2317,9 +2406,9 @@ def show_readiness_score():
         print("No sessions logged yet.")
         return
 
-    today = datetime.date.today()
-    current_start = today - datetime.timedelta(days=7)
-    prior_start = today - datetime.timedelta(days=14)
+    today = __import__("datetime").date.today()
+    current_start = today - __import__("datetime").timedelta(days=7)
+    prior_start = today - __import__("datetime").timedelta(days=14)
 
     current_sessions = []
     prior_sessions = []
@@ -2422,3 +2511,6 @@ def show_readiness_score():
         if rec not in seen:
             print(f"- {rec}")
             seen.add(rec)
+
+if __name__ == "__main__":
+    main()
