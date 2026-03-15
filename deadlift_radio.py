@@ -195,8 +195,31 @@ def extract_bodyweight_from_line(line: str):
     return None
 
 
+EXERCISE_ALIASES = {
+    "incline db": "Incline dumbbell",
+    "incline dumbbells": "Incline dumbbell",
+    "incline db press": "Incline dumbbell",
+
+    "hammer curls": "Hammer curls db",
+    "db hammer curls": "Hammer curls db",
+
+    "rear delt machine": "Machine rear deltoids",
+    "rear delts machine": "Machine rear deltoids",
+
+    "side delt machine": "Side deltoid raises machine",
+    "side delt raises machine": "Side deltoid raises machine",
+
+    "ez bar triceps": "Triceps extensions ez bar",
+    "ez bar tricep extension": "Triceps extensions ez bar",
+
+    "t bar rows": "T bar rows empty chest supported",
+}
+
+
 def normalize_exercise_name(line: str) -> str:
-    return re.sub(r"\s+", " ", line.strip())
+    cleaned = re.sub(r"\s+", " ", line.strip())
+    key = cleaned.lower()
+    return EXERCISE_ALIASES.get(key, cleaned)
 
 
 def is_normal_exercise_heading(line: str) -> bool:
