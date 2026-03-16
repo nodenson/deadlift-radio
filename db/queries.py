@@ -422,3 +422,16 @@ def session_had_pr(conn, session_id):
         SELECT COUNT(*) FROM personal_records WHERE session_id = ?
     """, (session_id,))
     return cur.fetchone()[0] > 0
+
+
+def get_sets_with_movements_in_window(conn, start_date, end_date):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.date, ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        JOIN sessions s ON ex.session_id = s.id
+        WHERE date(s.date) BETWEEN date(?) AND date(?)
+        ORDER BY s.date, ex.name
+    """, (start_date, end_date))
+    return cur.fetchall()

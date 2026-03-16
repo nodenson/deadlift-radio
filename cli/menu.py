@@ -11,6 +11,9 @@ from db.queries import (
     get_pr_register,
 )
 from reports.card import generate_session_card
+from reports.movement_ledger_cli import print_movement_ledger
+from reports.movement_ledger_card import render_movement_ledger_card
+from analytics.movement_ledger import build_movement_ledger
 from reports.archive_timeline_cli import print_timeline
 from reports.archive_timeline_card import render_archive_timeline_card
 from analytics.timeline import build_timeline
@@ -417,6 +420,7 @@ def run_menu() -> None:
     print("22) PR register")
     print("23) Show exercise dossier")
     print("24) Show archive timeline")
+    print("25) Show movement ledger")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -460,6 +464,14 @@ def run_menu() -> None:
     elif choice == "20": generate_session_card()
     elif choice == "21": generate_weekly_card()
     elif choice == "22": show_pr_register()
+    elif choice == "25":
+        raw = input("Window in days? (default 30): ").strip()
+        days = int(raw) if raw.isdigit() else 30
+        ledger = build_movement_ledger(days=days)
+        print_movement_ledger(ledger)
+        gen = input("\nGenerate ledger card? (y/n): ").strip().lower()
+        if gen == "y":
+            render_movement_ledger_card(days=days)
     elif choice == "24":
         raw = input("How many sessions? (default 5): ").strip()
         limit = int(raw) if raw.isdigit() else 5
