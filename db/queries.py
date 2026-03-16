@@ -311,3 +311,13 @@ def log_prs(conn, session_id: int, db_path: str, log_path: str = "/home/bune/dea
                     f.write(line)
 
     return prs
+
+
+def get_pr_register(conn):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT date, exercise, load, reps, prev_max
+        FROM personal_records
+        ORDER BY date DESC, exercise
+    """)
+    return cur.fetchall()

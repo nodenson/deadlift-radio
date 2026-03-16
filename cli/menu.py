@@ -1,3 +1,15 @@
+import sqlite3
+import shutil
+from pathlib import Path
+from datetime import datetime, timedelta
+from db.schema import DB_PATH
+from db.queries import (
+    get_last_session, get_session_by_id, get_exercises_for_session,
+    get_sets_for_exercise, get_exposures_for_session, get_recent_sessions,
+    get_pr_by_exercise, get_sets_in_date_range, get_max_session_date,
+    delete_session_by_id, format_load, estimate_e1rm, get_tonnage_in_date_range,
+    get_pr_register,
+)
 from reports.card import generate_session_card
 from reports.weekly_card import generate_weekly_card
 from reports.graphs import generate_training_graphs
@@ -37,6 +49,24 @@ def show_last_session() -> None:
             print(f"  {format_load(load)} x {reps}")
 
     conn.close()
+
+
+def show_pr_register() -> None:
+    conn = sqlite3.connect(DB_PATH)
+    rows = get_pr_register(conn)
+    conn.close()
+    print("\n+++ PR REGISTER +++")
+    if not rows:
+        print("No personal records logged yet.")
+        return
+    current_date = None
+    for date, exercise, load, reps, prev_max in rows:
+        if date != current_date:
+            print(f"\n{date}")
+            current_date = date
+        prev = f"{format_load(prev_max)} lbs" if prev_max else "first log"
+        improvement = f" (+{format_load(round(load - prev_max, 1))} lbs)" if prev_max else ""
+        print(f"  {exercise}: {format_load(load)} lbs x {reps}  [prev: {prev}{improvement}]")
 
 
 def show_last_session_summary() -> None:
@@ -378,6 +408,7 @@ def run_menu() -> None:
     print("19) Show readiness score")
     print("20) Generate session card")
     print("21) Generate weekly card")
+    print("22) PR register")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -420,4 +451,5 @@ def run_menu() -> None:
     elif choice == "19": show_readiness_score()
     elif choice == "20": generate_session_card()
     elif choice == "21": generate_weekly_card()
+    elif choice == "22": show_pr_register()
     else: print("Invalid choice.")
