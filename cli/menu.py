@@ -1,4 +1,5 @@
 from reports.card import generate_session_card
+from reports.weekly_card import generate_weekly_card
 from reports.graphs import generate_training_graphs
 from reports.card import generate_session_card
 from classification.movements import classify_exercise_movement, show_classification_audit
@@ -376,6 +377,7 @@ def run_menu() -> None:
     print("18) Show fatigue analysis")
     print("19) Show readiness score")
     print("20) Generate session card")
+    print("21) Generate weekly card")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -417,4 +419,5 @@ def run_menu() -> None:
     elif choice == "18": show_fatigue_analysis()
     elif choice == "19": show_readiness_score()
     elif choice == "20": generate_session_card()
+    elif choice == "21": generate_weekly_card()
     else: print("Invalid choice.")
