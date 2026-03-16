@@ -89,6 +89,7 @@ def get_last_session_data(db_path):
     summary = generate_session_summary(summary_data)
 
     return {
+        "session_id": session_id,
         "date": date_fmt,
         "bodyweight": str(bw_fmt),
         "top_exercise": top_exercise,
