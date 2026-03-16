@@ -1,24 +1,6 @@
-import sqlite3
-import shutil
-from datetime import datetime, timedelta
-from pathlib import Path
-
-from db.schema import DB_PATH
-from db.queries import (
-    format_load, estimate_e1rm,
-    get_last_session, get_session_by_id,
-    get_exercises_for_session, get_sets_for_exercise,
-    get_exposures_for_session, get_recent_sessions,
-    get_pr_by_exercise, delete_session_by_id,
-    get_sets_in_date_range, get_max_session_date,
-)
-from ingestion.ingest import ingest_workout, infer_session_metadata, warn_if_duplicate_session_date
-from analytics.tonnage import show_weekly_strength_report, show_workload_change_report
-from analytics.exposure import show_weekly_exposure_report
-from analytics.fatigue import show_fatigue_analysis
-from analytics.readiness import show_readiness_score
-from reports.markdown import export_session_to_markdown_prompt
+from reports.card import generate_session_card
 from reports.graphs import generate_training_graphs
+from reports.card import generate_session_card
 from classification.movements import classify_exercise_movement, show_classification_audit
 from utils.spinner import run_with_grimdark_spinner
 
@@ -393,6 +375,7 @@ def run_menu() -> None:
     print("17) Training graphs")
     print("18) Show fatigue analysis")
     print("19) Show readiness score")
+    print("20) Generate session card")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -414,6 +397,7 @@ def run_menu() -> None:
         print(f"\nLogged session #{session_id}")
         show_last_session()
         show_last_session_summary()
+        generate_session_card()
     elif choice == "2":  show_last_session()
     elif choice == "3":  show_prs()
     elif choice == "4":  show_last_session_summary()
@@ -432,4 +416,5 @@ def run_menu() -> None:
     elif choice == "17": generate_training_graphs()
     elif choice == "18": show_fatigue_analysis()
     elif choice == "19": show_readiness_score()
+    elif choice == "20": generate_session_card()
     else: print("Invalid choice.")
