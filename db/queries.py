@@ -382,3 +382,43 @@ def get_exercise_last_seen(conn, exercise_name):
     """, (exercise_name,))
     row = cur.fetchone()
     return row[0] if row else None
+
+
+def get_timeline_sessions(conn, limit=5):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.id, s.date, s.bodyweight,
+               COUNT(DISTINCT st.id) as total_sets,
+               COALESCE(SUM(st.reps), 0) as total_reps,
+               COALESCE(SUM(st.load * st.reps), 0) as tonnage
+        FROM sessions s
+        LEFT JOIN exercises ex ON ex.session_id = s.id
+        LEFT JOIN sets st ON st.exercise_id = ex.id
+        GROUP BY s.id
+        ORDER BY s.date DESC
+        LIMIT ?
+    """, (limit,))
+    return cur.fetchall()
+
+
+def get_top_lifts_for_session(conn, session_id, top_n=3):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ex.name, MAX(st.load) as top_load, st.reps
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        WHERE ex.session_id = ?
+        AND st.load > 0
+        GROUP BY ex.name
+        ORDER BY top_load DESC
+        LIMIT ?
+    """, (session_id, top_n))
+    return cur.fetchall()
+
+
+def session_had_pr(conn, session_id):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT COUNT(*) FROM personal_records WHERE session_id = ?
+    """, (session_id,))
+    return cur.fetchone()[0] > 0

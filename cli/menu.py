@@ -11,6 +11,9 @@ from db.queries import (
     get_pr_register,
 )
 from reports.card import generate_session_card
+from reports.archive_timeline_cli import print_timeline
+from reports.archive_timeline_card import render_archive_timeline_card
+from analytics.timeline import build_timeline
 from reports.exercise_dossier_cli import print_exercise_dossier
 from reports.exercise_dossier_card import render_exercise_dossier_card
 from analytics.dossier import build_exercise_dossier
@@ -413,6 +416,7 @@ def run_menu() -> None:
     print("21) Generate weekly card")
     print("22) PR register")
     print("23) Show exercise dossier")
+    print("24) Show archive timeline")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -456,6 +460,14 @@ def run_menu() -> None:
     elif choice == "20": generate_session_card()
     elif choice == "21": generate_weekly_card()
     elif choice == "22": show_pr_register()
+    elif choice == "24":
+        raw = input("How many sessions? (default 5): ").strip()
+        limit = int(raw) if raw.isdigit() else 5
+        timeline = build_timeline(limit=limit)
+        print_timeline(timeline)
+        gen = input("\nGenerate timeline card? (y/n): ").strip().lower()
+        if gen == "y":
+            render_archive_timeline_card(limit=limit)
     elif choice == "23":
         name = input("Exercise name: ").strip()
         if name:
