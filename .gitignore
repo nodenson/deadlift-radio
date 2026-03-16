@@ -14,3 +14,4 @@ exports/
 *.md
 !README.md!assets/**/*.png
 !assets/*.png
+logs/
