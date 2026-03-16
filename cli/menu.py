@@ -11,6 +11,9 @@ from db.queries import (
     get_pr_register,
 )
 from reports.card import generate_session_card
+from reports.exercise_dossier_cli import print_exercise_dossier
+from reports.exercise_dossier_card import render_exercise_dossier_card
+from analytics.dossier import build_exercise_dossier
 from reports.weekly_card import generate_weekly_card
 from reports.graphs import generate_training_graphs
 from reports.card import generate_session_card
@@ -409,6 +412,7 @@ def run_menu() -> None:
     print("20) Generate session card")
     print("21) Generate weekly card")
     print("22) PR register")
+    print("23) Show exercise dossier")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -452,4 +456,15 @@ def run_menu() -> None:
     elif choice == "20": generate_session_card()
     elif choice == "21": generate_weekly_card()
     elif choice == "22": show_pr_register()
+    elif choice == "23":
+        name = input("Exercise name: ").strip()
+        if name:
+            dossier = build_exercise_dossier(name)
+            print_exercise_dossier(dossier)
+            if dossier:
+                gen = input("\nGenerate dossier card? (y/n): ").strip().lower()
+                if gen == "y":
+                    render_exercise_dossier_card(name)
+        else:
+            print("No exercise name entered.")
     else: print("Invalid choice.")

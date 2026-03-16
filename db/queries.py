@@ -321,3 +321,64 @@ def get_pr_register(conn):
         ORDER BY date DESC, exercise
     """)
     return cur.fetchall()
+
+
+def get_exercise_history(conn, exercise_name, limit=5):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.date,
+               MAX(st.load) as top_load,
+               (SELECT reps FROM sets st2
+                JOIN exercises ex2 ON st2.exercise_id = ex2.id
+                JOIN sessions s2 ON ex2.session_id = s2.id
+                WHERE ex2.name = ex.name AND s2.date = s.date
+                ORDER BY st2.load DESC LIMIT 1) as top_reps,
+               SUM(st.load * st.reps) as tonnage
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        JOIN sessions s ON ex.session_id = s.id
+        WHERE ex.name = ?
+        GROUP BY s.date
+        ORDER BY s.date DESC
+        LIMIT ?
+    """, (exercise_name, limit))
+    return cur.fetchall()
+
+
+def get_exercise_30d_stats(conn, exercise_name):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT COUNT(DISTINCT s.date) as appearances,
+               COALESCE(SUM(st.load * st.reps), 0) as volume
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        JOIN sessions s ON ex.session_id = s.id
+        WHERE ex.name = ?
+        AND date(s.date) >= date('now', '-30 days')
+    """, (exercise_name,))
+    return cur.fetchone()
+
+
+def get_exercise_best_signal(conn, exercise_name):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        WHERE ex.name = ?
+        ORDER BY st.load DESC
+        LIMIT 20
+    """, (exercise_name,))
+    return cur.fetchall()
+
+
+def get_exercise_last_seen(conn, exercise_name):
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT MAX(s.date)
+        FROM exercises ex
+        JOIN sessions s ON ex.session_id = s.id
+        WHERE ex.name = ?
+    """, (exercise_name,))
+    row = cur.fetchone()
+    return row[0] if row else None
