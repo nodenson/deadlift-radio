@@ -12,4 +12,5 @@ __pycache__/
 exports/
 *.png
 *.md
-!README.md
+!README.md!assets/**/*.png
+!assets/*.png
