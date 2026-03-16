@@ -402,6 +402,12 @@ def generate_session_card(db_path=DB_PATH, output_path=OUTPUT_PATH):
         "is_summary": False,
         "is_satire": False,
     }
+    from db.queries import log_prs
+    prs = log_prs(_pr_conn, data["session_id"], db_path)
+    if prs:
+        for pr in prs:
+            prev = f"{pr['prev_max']} lbs" if pr['prev_max'] else "no prior record"
+            print(f"[PR] {pr['exercise']} — {pr['load']} lbs x {pr['reps']} (prev: {prev})")
     _pr_conn.close()
     bg_b64 = get_background_base64(context)
     html = build_html(data, bg_b64)

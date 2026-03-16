@@ -52,5 +52,17 @@ def init_db() -> None:
     )
     """)
 
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS personal_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        session_id INTEGER NOT NULL,
+        date TEXT NOT NULL,
+        exercise TEXT NOT NULL,
+        load REAL NOT NULL,
+        reps INTEGER NOT NULL,
+        prev_max REAL,
+        FOREIGN KEY(session_id) REFERENCES sessions(id)
+    )
+    """)
     conn.commit()
     conn.close()

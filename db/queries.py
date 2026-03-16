@@ -231,3 +231,83 @@ def session_has_pr(conn, session_id: int) -> bool:
             return True
 
     return False
+
+
+def log_prs(conn, session_id: int, db_path: str, log_path: str = "/home/bune/deadlift_radio/logs/pr_history.log") -> list:
+    """
+    Detects PRs in the session, writes them to the personal_records table
+    and appends to the flat log file. Returns list of PR dicts.
+    """
+    import os
+    from datetime import datetime
+
+    cur = conn.cursor()
+
+    # Get session date
+    cur.execute("SELECT date FROM sessions WHERE id = ?", (session_id,))
+    row = cur.fetchone()
+    if not row:
+        return []
+    session_date = row[0]
+
+    # Get all sets for this session
+    cur.execute("""
+        SELECT ex.name, st.load, st.reps
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        WHERE ex.session_id = ?
+    """, (session_id,))
+    session_sets = cur.fetchall()
+
+    # Find top load+reps per exercise in this session
+    session_tops = {}
+    for exercise_name, load, reps in session_sets:
+        if exercise_name not in session_tops or load > session_tops[exercise_name][0]:
+            session_tops[exercise_name] = (load, reps)
+
+    prs = []
+    for exercise_name, (load, reps) in session_tops.items():
+        cur.execute("""
+            SELECT MAX(st.load)
+            FROM sets st
+            JOIN exercises ex ON st.exercise_id = ex.id
+            JOIN sessions s ON ex.session_id = s.id
+            WHERE ex.name = ? AND s.id != ?
+        """, (exercise_name, session_id))
+        row = cur.fetchone()
+        prev_max = row[0] if row and row[0] is not None else 0
+
+        if load > prev_max:
+            prs.append({
+                "exercise": exercise_name,
+                "load": load,
+                "reps": reps,
+                "prev_max": prev_max,
+                "date": session_date,
+            })
+
+    for pr in prs:
+        cur.execute(
+            "SELECT id FROM personal_records WHERE session_id = ? AND exercise = ?",
+            (session_id, pr["exercise"])
+        )
+        if cur.fetchone():
+            continue
+        cur.execute(
+            "INSERT INTO personal_records (session_id, date, exercise, load, reps, prev_max) VALUES (?, ?, ?, ?, ?, ?)",
+            (session_id, pr["date"], pr["exercise"], pr["load"], pr["reps"], pr["prev_max"])
+        )
+    conn.commit()
+
+    # Append to flat log — only write entries not already in the file
+    if prs:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        existing = open(log_path).read() if os.path.exists(log_path) else ""
+        with open(log_path, "a") as f:
+            for pr in prs:
+                prev = f"{pr['prev_max']} lbs" if pr['prev_max'] else "no prior record"
+                line = f"[{pr['date']}] PR — {pr['exercise']} — {pr['load']} lbs x {pr['reps']} (prev: {prev})\n"
+                if line not in existing:
+                    f.write(line)
+
+    return prs
