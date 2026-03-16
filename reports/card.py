@@ -77,6 +77,7 @@ def get_last_session_data(db_path):
     bw_fmt = fmt(bodyweight) if bodyweight else "—"
 
     summary_data = {
+        "session_id": session_id,
         "date": date_fmt,
         "bodyweight": bw_fmt,
         "top_set_exercise": top_exercise,
@@ -389,14 +390,18 @@ def generate_session_card(db_path=DB_PATH, output_path=OUTPUT_PATH):
     card_path = os.path.join(EXPORT_DIR, f"session_card_{dated_slug}.png")
     caption_path = os.path.join(EXPORT_DIR, f"session_caption_{dated_slug}.txt")
 
-    # Basic session context — expand later with PR detection
+    # Session context — PR detection against historical maxes
+    from db.queries import session_has_pr
+    import sqlite3 as _sqlite3
+    _pr_conn = _sqlite3.connect(db_path)
     context = {
-        "is_pr": False,
+        "is_pr": session_has_pr(_pr_conn, data["session_id"]),
         "is_heavy": data.get("tonnage", "0").replace(",", "").isdigit() and int(data.get("tonnage", "0").replace(",", "")) > 30000,
         "is_recovery": False,
         "is_summary": False,
         "is_satire": False,
     }
+    _pr_conn.close()
     bg_b64 = get_background_base64(context)
     html = build_html(data, bg_b64)
 

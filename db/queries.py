@@ -202,3 +202,32 @@ def get_tonnage_in_date_range(conn, start_date: str, end_date: str) -> float:
         WHERE date(sess.date) BETWEEN date(?) AND date(?)
     """, (start_date, end_date))
     return float(cur.fetchone()[0] or 0)
+
+def session_has_pr(conn, session_id: int) -> bool:
+    """
+    Returns True if any set in this session beats the all-time
+    max load for that exercise (excluding this session).
+    """
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT ex.name, st.load
+        FROM sets st
+        JOIN exercises ex ON st.exercise_id = ex.id
+        WHERE ex.session_id = ?
+    """, (session_id,))
+    session_sets = cur.fetchall()
+
+    for exercise_name, load in session_sets:
+        cur.execute("""
+            SELECT MAX(st.load)
+            FROM sets st
+            JOIN exercises ex ON st.exercise_id = ex.id
+            JOIN sessions s ON ex.session_id = s.id
+            WHERE ex.name = ? AND s.id != ?
+        """, (exercise_name, session_id))
+        row = cur.fetchone()
+        prev_max = row[0] if row and row[0] is not None else 0
+        if load > prev_max:
+            return True
+
+    return False
