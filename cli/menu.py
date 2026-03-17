@@ -1,3 +1,4 @@
+from analytics.bodyweight import show_bodyweight_trend
 from ingestion.ingest import infer_session_metadata, warn_if_duplicate_session_date, ingest_workout
 import sqlite3
 import shutil
@@ -424,6 +425,7 @@ def run_menu() -> None:
     print("24) Show archive timeline")
     print("25) Show movement ledger")
     print("26) Archive query")
+    print("27) Show bodyweight trend")
     choice = input("Choose an option: ").strip()
 
     if choice == "1":
@@ -464,6 +466,7 @@ def run_menu() -> None:
     elif choice == "17": generate_training_graphs()
     elif choice == "18": show_fatigue_analysis()
     elif choice == "19": show_readiness_score()
+    elif choice == "27": show_bodyweight_trend()
     elif choice == "20": generate_session_card()
     elif choice == "21": generate_weekly_card()
     elif choice == "22": show_pr_register()
