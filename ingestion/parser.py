@@ -118,8 +118,8 @@ def looks_like_set_attempt(line: str) -> bool:
 
 def looks_like_note_line(line: str) -> bool:
     lower = line.strip().lower()
-    note_starts = ("warmup", "maybe ", "front levers", "back levers", "scapular pulls")
-    note_contains = ("neutral setting", "seconds", "closes each hand", "palms down", "palms up", "laying face down")
+    note_starts = ("warmup", "maybe ", "front levers", "back levers", "scapular pulls", "tired", "felt ", "easy", "hard", "rough", "good session", "bad session")
+    note_contains = ("neutral setting", "seconds", "closes each hand", "palms down", "palms up", "laying face down", "lb bodyweight", "lbs bodyweight")
     exact_notes = {"chest expander", "forearm supination pronation device", "captains of crush sport gripper", "2 springs"}
     return (
         lower in exact_notes

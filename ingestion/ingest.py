@@ -98,6 +98,7 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         if lower_line.startswith("bw") or lower_line.startswith("bodyweight"):
             bw_sets = parse_bodyweight_set_line(line)
             if bw_sets and current_exercise_id is not None:
+                bw_sets = [(bodyweight or 0.0, reps) for _, reps in bw_sets]
                 insert_sets(bw_sets)
             else:
                 session_notes.append(line)
