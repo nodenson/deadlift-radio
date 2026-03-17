@@ -15,3 +15,8 @@ exports/
 !README.md!assets/**/*.png
 !assets/*.png
 logs/
+venv/
+*.pre_*
+__pycache__/
+*.pyc
+exports/
