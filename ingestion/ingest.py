@@ -60,6 +60,22 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
     session_notes = []
     current_load_hint = None
     pending_reps_hint = None
+    # Auto-detect where preamble ends by finding first heading followed by a set line
+    SESSION_META_WORDS = ("at ", "gym", "session", "day", "morning", "evening", "night", "legs", "push", "pull", "arms", "chest", "back", "shoulders")
+    def looks_like_session_meta(l):
+        low = l.lower()
+        return any(w in low for w in SESSION_META_WORDS)
+    first_exercise_line = None
+    for i, l in enumerate(lines):
+        stripped = l.split("-")[0].strip()
+        if is_normal_exercise_heading(stripped) and not looks_like_session_meta(stripped):
+            for j in lines[i+1:i+4]:
+                if (parse_plate_notation(j) or parse_standard_set_line(j) or
+                    parse_bodyweight_set_line(j) or parse_weight_then_reps_no_x(j)):
+                    first_exercise_line = l
+                    break
+        if first_exercise_line:
+            break
     in_preamble = True
 
     def create_exercise(name: str):
@@ -141,8 +157,11 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
             continue
         stripped = line.split("-")[0].strip()
         if is_normal_exercise_heading(stripped):
-            in_preamble = False
-            create_exercise(normalize_exercise_name(stripped))
+            if first_exercise_line and line != first_exercise_line and in_preamble:
+                session_notes.append(line)
+            else:
+                in_preamble = False
+                create_exercise(normalize_exercise_name(stripped))
             continue
         if current_exercise_id is not None and looks_like_set_attempt(line):
             print("\n+++ LOG VALIDATION WARNING +++")
