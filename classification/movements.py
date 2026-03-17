@@ -20,6 +20,8 @@ EXERCISE_ALIASES = {
     "hamstring curl": "Hamstring curl",
     "leg curl": "Hamstring curl",
     "kneeling leg curl": "Hamstring curl",
+    "leg extensions": "Leg extension",
+    "leg extension": "Leg extension",
     "rear delt machine": "Machine rear deltoids",
     "rear delts machine": "Machine rear deltoids",
     "side delt machine": "Side deltoid raises machine",

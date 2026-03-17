@@ -96,7 +96,11 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
             session_notes.append(line)
             continue
         if lower_line.startswith("bw") or lower_line.startswith("bodyweight"):
-            session_notes.append(line)
+            bw_sets = parse_bodyweight_set_line(line)
+            if bw_sets and current_exercise_id is not None:
+                insert_sets(bw_sets)
+            else:
+                session_notes.append(line)
             continue
         if line.startswith("#"):
             session_notes.append(line)
@@ -128,23 +132,22 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
                 in_preamble = False
                 insert_sets(parsed_sets)
             continue
-        if current_exercise_id is not None and looks_like_set_attempt(line):
-            print("\n+++ LOG VALIDATION WARNING +++")
-            print(f"Exercise: {current_exercise_name}")
-            print(f"Line ignored: {line}")
-            session_notes.append(f"Validation warning for {current_exercise_name}: ignored line: {line}")
-            continue
         reps_first_heading = parse_reps_first_exercise_heading(line)
         if reps_first_heading:
             exercise_name, reps_hint = reps_first_heading
             create_exercise(exercise_name)
             pending_reps_hint = reps_hint
             continue
-        if is_normal_exercise_heading(line):
-            if in_preamble:
-                session_notes.append(line)
-            else:
-                create_exercise(normalize_exercise_name(line))
+        stripped = line.split("-")[0].strip()
+        if is_normal_exercise_heading(stripped):
+            in_preamble = False
+            create_exercise(normalize_exercise_name(stripped))
+            continue
+        if current_exercise_id is not None and looks_like_set_attempt(line):
+            print("\n+++ LOG VALIDATION WARNING +++")
+            print(f"Exercise: {current_exercise_name}")
+            print(f"Line ignored: {line}")
+            session_notes.append(f"Validation warning for {current_exercise_name}: ignored line: {line}")
             continue
         session_notes.append(line)
 
