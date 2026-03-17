@@ -12,18 +12,56 @@ def parse_log_date(line: str):
     return None
 
 
+def parse_plate_notation(line: str):
+    text = line.strip().lower()
+    text = re.sub(r"\s+", " ", text)
+    m = re.match(
+        r"^\s*(\d+(?:\.\d+)?)\s*plates?\s*[xX]\s*([\d,\s]+?)(?:\s*[xX]\s*(\d+))?\s*(?:reps?)?\s*$",
+        text,
+    )
+    if not m:
+        return None
+    num_plates = float(m.group(1))
+    load = num_plates * 45 + 45
+    reps_blob = m.group(2).strip()
+    set_count = int(m.group(3)) if m.group(3) else None
+    rep_values = [int(x) for x in re.findall(r"\d+", reps_blob)]
+    if not rep_values:
+        return None
+    if set_count is not None and len(rep_values) == 1:
+        return [(load, rep_values[0]) for _ in range(set_count)]
+    return [(load, reps) for reps in rep_values]
+
+
+def parse_bodyweight_set_line(line: str):
+    text = line.strip().lower()
+    text = re.sub(r"\s+", " ", text)
+    if not re.search(r"\bbodyweight\b|\bbw\b", text):
+        return None
+    if re.search(r"\d+\s*(?:lbs?|lb)\s*bodyweight", text):
+        return None
+    set_count_m = re.search(r"(\d+)\s*sets?", text)
+    reps_m = re.search(r"(\d+)\s*(?:reps?|each)", text)
+    if not reps_m:
+        reps_m = re.search(r"[xX]\s*(\d+)", text)
+    if not reps_m:
+        return None
+    reps = int(reps_m.group(1))
+    sets = int(set_count_m.group(1)) if set_count_m else 1
+    return [(0.0, reps) for _ in range(sets)]
+
+
 def parse_standard_set_line(line: str):
     text = line.strip().lower()
     text = re.sub(r"\bthen\b", ",", text)
+    text = re.sub(r"\beach\s+\w+\s*$", "", text).strip()
     text = re.sub(r"\s+", " ", text)
-
     m = re.match(
         r"^\s*(\d+(?:\.\d+)?)(?:\s*(?:lbs?|lb|s))?\s*[xX]\s*([\d,\s]+?)(?:\s*[xX]\s*(\d+))?\s*(?:reps?)?\s*$",
         text,
     )
     if not m:
         return None
-
     load = float(m.group(1))
     reps_blob = m.group(2).strip()
     set_count = int(m.group(3)) if m.group(3) else None
@@ -74,6 +112,7 @@ def looks_like_set_attempt(line: str) -> bool:
         or "x" in text
         or "rep" in text
         or "lb" in text
+        or "plate" in text
     )
 
 
@@ -90,7 +129,14 @@ def looks_like_note_line(line: str) -> bool:
 
 
 def extract_bodyweight_from_line(line: str):
-    m = re.search(r"bw\.?\s*(\d+(?:\.\d+)?)", line.strip().lower())
+    text = line.strip().lower()
+    m = re.search(r"\bbw\.?\s*(\d+(?:\.\d+)?)", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"(\d+(?:\.\d+)?)\s*lbs?\s+bodyweight", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"\bbodyweight\b[\s:]+(\d+(?:\.\d+)?)", text)
     if m:
         return float(m.group(1))
     return None
@@ -124,7 +170,7 @@ def is_normal_exercise_heading(line: str) -> bool:
     if looks_like_note_line(line):
         return False
     word_count = len(line.split())
-    return 1 <= word_count <= 6 and len(line.strip()) <= 50
+    return 1 <= word_count <= 12 and len(line.strip()) <= 80
 
 
 def classify_exposure(line: str):
