@@ -1,71 +1,46 @@
-# Deadlift Radio
+# Deadlift Radio / OpenClaw / Iron Forge
 
-> Build → Record → Analyze → Ascend
+A local-first, sovereign AI stack for strength intelligence, social scouting, and autonomous research.
 
-A terminal-based strength intelligence system for serious lifters.
-Deadlift Radio logs workouts, preserves training history, and analyzes
-tonnage, fatigue, readiness, and progression over time.
+## Systems
 
----
+### Deadlift Radio
+Personal strength logging and analytics engine. Freehand workout log ingestion, SQLite storage, session cards, PR tracking, fatigue analysis, bodyweight trend.
 
-## Features
+### OpenClaw
+Social intelligence scout. YouTube provider live, creator scoring, intelligence briefs. Apify/Instagram stubs ready for expansion.
 
-- Log workouts from raw terminal input — no forms, no friction
-- Parse exercise names, sets, reps, and load automatically
-- Track estimated 1RM progression per exercise
-- Weekly tonnage, push/pull balance, and workload change reports
-- Fatigue analysis with training signals and recommendations
-- Readiness score — GREEN / YELLOW / RED before every session
-- Joint and tendon exposure tracking for injury prevention
-- Export sessions to Markdown
-- Generate strength progress graphs and training heatmaps
-- SQLite storage — no dependencies, no cloud, no bullshit
+### Iron Forge (Research Engine) — IN DESIGN
+Autonomous research pipeline. Staged intake → retrieval → analysis → dossier → lessons learned. Modular skills layer. Local-first execution.
 
----
+## Stack
+- Python 3.10, SQLite, Playwright
+- Ollama (local LLM — llama3.1:70b primary)
+- Groq free tier (fallback)
+- Aider (coding agent, constrained mode)
 
-## Structure
-```
-deadlift-radio/
-├── main.py                  # Entry point
-├── db/                      # Schema and query layer
-├── ingestion/               # Workout log parser and ingest engine
-├── analytics/               # Tonnage, fatigue, readiness, exposure
-├── reports/                 # Graphs and markdown export
-├── cli/                     # Menu and display layer
-├── classification/          # Movement and exercise classification
-├── utils/                   # Spinner and shared utilities
-└── exports/                 # Generated graphs and session reports
-```
+## Compute priority
+1. Local Ollama (4x RTX 3060 Ti, 32GB VRAM)
+2. Groq free tier
+3. Paid APIs (last resort only)
 
----
-
-## Run
+## Quick start
 ```bash
-python3 main.py
+cd ~/deadlift_radio
+export $(cat .env | xargs)
+python main.py          # Deadlift Radio CLI
+python -m openclaw.main scout "query"  # OpenClaw scout
 ```
 
-## Example Input
-```
-March 13 2026
-BW 185
-
-Bench
-135 x 8
-185 x 5
-225 x 3
-245 x 1
-
-T bar rows empty chest supported
-90 x 10 x 4
-
-Hammer curls db
-35 x 12 x 3
+## Aider (safe mode)
+```bash
+bash aider_safe.sh ollama/llama3.1:70b
 ```
 
----
-
-## Vision
-
-Deadlift Radio is the data layer for a larger strength media system.
-Future modules: AI session summaries, automated video briefings, and
-social media exports via the AI Media Lab pipeline.
+## Design rules
+- Open source / free tier first
+- Local hardware before cloud
+- No auto-commits without review
+- No parent directory access
+- Audit log all agent sessions
+- Secrets in .env only, never committed

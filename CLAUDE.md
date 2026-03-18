@@ -67,3 +67,23 @@ Track all LLM/API providers, free tier limits, model capabilities.
 Auto-select best provider per task. Alert on new free offerings.
 Lives in openclaw/providers/registry.py
 Sources: provider docs, HuggingFace, Together.ai, Fireworks, Groq, Mistral, Cohere
+
+## Iron Forge (Research Engine) — planned
+Autonomous research pipeline. Same functional class as AutoResearchClaw but our own product.
+Stages: intake → scope check → plan → source discovery → retrieval → extraction → analysis → review → synthesis → artifacts → lessons → archive
+Output artifacts per run: dossier.md, brief.md, source_map.json, risk_register.json, tasks.md, lessons_learned.json, eval_report.json
+Lives in: iron_forge/
+
+## Skills Layer — planned
+Modular reusable procedural skills. Inspired by agentskills.io pattern.
+Lives in: skills/
+Categories: research/, coding/, security/, ops/, content/, product/
+Each skill: metadata header + content body + version + provenance
+
+## Agent rules (non-negotiable)
+- Constrained to repo directory only
+- No parent directory access
+- No auto-commit without review
+- No URL fetching unless explicitly allowed
+- Audit log all sessions in .aider_sessions/
+- Secrets from .env only
