@@ -61,3 +61,9 @@ Complex refactors: use Claude chat with full context.
 1. Ollama local (llama3.2 for speed, qwen3 for reasoning)
 2. Groq free tier (llama-3.3-70b-versatile)
 3. Anthropic Claude (paid, last resort)
+
+## Planned: Provider Intelligence Registry
+Track all LLM/API providers, free tier limits, model capabilities.
+Auto-select best provider per task. Alert on new free offerings.
+Lives in openclaw/providers/registry.py
+Sources: provider docs, HuggingFace, Together.ai, Fireworks, Groq, Mistral, Cohere
