@@ -11,17 +11,7 @@ __pycache__/
 # Generated outputs
 exports/
 *.png
-*.md
 !README.md!assets/**/*.png
 !assets/*.png
 logs/
 venv/
-*.pre_*
-__pycache__/
-*.pyc
-exports/
-.env
-.env.*
-*.db
-exports/
-.aider*
