@@ -15,3 +15,6 @@ exports/
 !assets/*.png
 logs/
 venv/
+.aider*
+.env
+.aider_sessions/
