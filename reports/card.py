@@ -434,6 +434,14 @@ def generate_session_card(db_path=DB_PATH, output_path=OUTPUT_PATH):
     else:
         print(f"[delivery] Inbox not mounted, skipping")
 
+
+    from utils.llm_summary import generate_workout_sonnet
+    sonnet = generate_workout_sonnet({"date": data["date"], "exercises": data["top_exercise"], "tonnage": data["tonnage"], "top_set": data["top_set"], "prs": ""})
+    print("\n── SESSION SONNET ──")
+    print(sonnet)
+    sonnet_path = os.path.join(EXPORT_DIR, f"session_sonnet_{dated_slug}.txt")
+    with open(sonnet_path, "w") as f:
+        f.write(sonnet)
     return card_path
 
 
