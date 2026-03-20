@@ -1,3 +1,6 @@
+import sqlite3
+from db.schema import DB_PATH
+
 EXERCISE_MOVEMENTS = {
     "Bench": "horizontal_press",
     "Incline dumbbell": "incline_press",
@@ -48,10 +51,32 @@ def classify_exercise_movement(name: str) -> str:
     return EXERCISE_MOVEMENTS.get(name, "other")
 
 
+def lookup_exercise_alias(key: str) -> str:
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cur = conn.cursor()
+        cur.execute("SELECT canonical_name FROM exercise_aliases WHERE alias_text = ?", (key,))
+        result = cur.fetchone()
+        conn.close()
+        if result:
+            return result[0]
+    except Exception as e:
+        print(f"DB lookup failed: {e}")
+    return None
+
+
 def normalize_exercise_name(line: str) -> str:
     import re
     cleaned = re.sub(r"\s+", " ", line.strip())
     key = cleaned.lower()
+    
+    try:
+        db_alias = lookup_exercise_alias(key)
+        if db_alias:
+            return db_alias
+    except Exception as e:
+        print(f"DB lookup failed: {e}")
+
     return EXERCISE_ALIASES.get(key, cleaned)
 
 

@@ -1,7 +1,7 @@
 import sqlite3
 from datetime import datetime
 from db.schema import DB_PATH
-from db.queries import find_sessions_by_date, format_load
+from db.queries import find_sessions_by_date, format_load, upsert_exercise_alias
 from ingestion.parser import (
     parse_log_date, extract_bodyweight_from_line, parse_standard_set_line,
     parse_weight_then_reps_no_x, parse_weight_only_line, parse_rep_only_line,
@@ -85,6 +85,10 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         current_exercise_name = name
         current_load_hint = None
         pending_reps_hint = None
+        try:
+            upsert_exercise_alias(cur, alias_text=name, canonical_name=normalize_exercise_name(name))
+        except Exception as e:
+            print(f"Failed to upsert exercise alias: {e}")
 
     def insert_exposure(exposure: dict):
         cur.execute(
