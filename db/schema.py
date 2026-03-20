@@ -64,5 +64,15 @@ def init_db() -> None:
         FOREIGN KEY(session_id) REFERENCES sessions(id)
     )
     """)
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS exercise_aliases (
+        alias_text TEXT PRIMARY KEY,
+        canonical_name TEXT NOT NULL,
+        seen_count INTEGER DEFAULT 1,
+        last_seen TEXT
+    );
+    """)
+    
     conn.commit()
     conn.close()

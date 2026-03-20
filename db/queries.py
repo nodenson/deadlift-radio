@@ -435,3 +435,23 @@ def get_sets_with_movements_in_window(conn, start_date, end_date):
         ORDER BY s.date, ex.name
     """, (start_date, end_date))
     return cur.fetchall()
+
+
+def upsert_exercise_alias(conn, alias_text: str, canonical_name: str):
+    from datetime import datetime
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO exercise_aliases (alias_text, canonical_name, last_seen)
+        VALUES (?, ?, ?)
+        ON CONFLICT(alias_text) DO UPDATE SET
+            seen_count = seen_count + 1,
+            last_seen = excluded.last_seen
+    """, (alias_text.lower().strip(), canonical_name, datetime.now().strftime("%Y-%m-%d")))
+    conn.commit()
+
+
+def lookup_exercise_alias(conn, alias_text: str):
+    cur = conn.cursor()
+    cur.execute("SELECT canonical_name FROM exercise_aliases WHERE alias_text = ?", (alias_text.lower().strip(),))
+    row = cur.fetchone()
+    return row[0] if row else None
