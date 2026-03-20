@@ -86,7 +86,7 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         current_load_hint = None
         pending_reps_hint = None
         try:
-            upsert_exercise_alias(cur, alias_text=name, canonical_name=normalize_exercise_name(name))
+            upsert_exercise_alias(conn, alias_text=name, canonical_name=normalize_exercise_name(name))
         except Exception as e:
             print(f"Failed to upsert exercise alias: {e}")
 
