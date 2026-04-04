@@ -44,7 +44,7 @@ def _format_session_detail(session_row, conn):
         if sets:
             best = max(sets, key=lambda s: queries.estimate_e1rm(s["load"], s["reps"]))
             e1rm = round(queries.estimate_e1rm(best["load"], best["reps"]), 1)
-        exercises.append({"id": ex_id, "name": ex_name, "sets": sets, "e1rm": e1rm})
+        exercises.append({"id": ex_id, "name": ex_name, "sets": sets, "top_e1rm": e1rm})
     session["exercises"] = exercises
     return session
 
