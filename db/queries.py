@@ -66,7 +66,7 @@ def get_recent_sessions(conn, limit: int = 10):
     cur = conn.cursor()
     cur.execute("""
         SELECT id, date, bodyweight, notes
-        FROM sessions ORDER BY id DESC LIMIT ?
+        FROM sessions ORDER BY date DESC, id DESC LIMIT ?
     """, (limit,))
     return cur.fetchall()
 
