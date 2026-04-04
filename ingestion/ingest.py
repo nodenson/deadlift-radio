@@ -59,6 +59,7 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
     current_exercise_name = None
     session_notes = []
     current_load_hint = None
+    pending_exposure = None
     pending_reps_hint = None
     # Auto-detect where preamble ends by finding first heading followed by a set line
     SESSION_META_WORDS = ("at ", "gym", "session", "day", "morning", "evening", "night", "legs", "push", "pull", "arms", "chest", "back", "shoulders")
@@ -68,7 +69,7 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
     first_exercise_line = None
     for i, l in enumerate(lines):
         stripped = l.split("-")[0].strip()
-        if is_normal_exercise_heading(stripped) and not looks_like_session_meta(stripped):
+        if (is_normal_exercise_heading(stripped) or is_normal_exercise_heading(l)) and not looks_like_session_meta(stripped) and not classify_exposure(l):
             for j in lines[i+1:i+4]:
                 if (parse_plate_notation(j) or parse_standard_set_line(j) or
                     parse_bodyweight_set_line(j) or parse_weight_then_reps_no_x(j)):
@@ -126,11 +127,42 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         if line.startswith("#"):
             session_notes.append(line)
             continue
+        stripped_early = line.split("-")[0].strip()
+        if is_normal_exercise_heading(stripped_early):
+            early_exposure = classify_exposure(line)
+            if early_exposure is not None:
+                if pending_exposure is not None:
+                    insert_exposure(pending_exposure)
+                if early_exposure.get("reps") is None:
+                    pending_exposure = early_exposure
+                else:
+                    insert_exposure(early_exposure)
+                    pending_exposure = None
+                session_notes.append(line)
+                continue
         exposure = classify_exposure(line)
         if exposure is not None:
-            insert_exposure(exposure)
+            if pending_exposure is not None:
+                insert_exposure(pending_exposure)
+            if exposure.get("reps") is None:
+                pending_exposure = exposure
+            else:
+                insert_exposure(exposure)
+                pending_exposure = None
             session_notes.append(line)
             continue
+        if pending_exposure is not None:
+            import re as _re
+            nums = [int(x) for x in _re.findall(r"\d+", line)]
+            if nums and ("rep" in line.lower() or line.strip().isdigit()) and not is_normal_exercise_heading(line):
+                pending_exposure["reps"] = nums[0]
+                insert_exposure(pending_exposure)
+                pending_exposure = None
+                session_notes.append(line)
+                continue
+            else:
+                insert_exposure(pending_exposure)
+                pending_exposure = None
         if looks_like_note_line(line):
             session_notes.append(line)
             continue
@@ -160,12 +192,24 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
             pending_reps_hint = reps_hint
             continue
         stripped = line.split("-")[0].strip()
-        if is_normal_exercise_heading(stripped):
+        if is_normal_exercise_heading(stripped) or is_normal_exercise_heading(line):
+            exposure_check = classify_exposure(line)
+            if exposure_check is not None:
+                if pending_exposure is not None:
+                    insert_exposure(pending_exposure)
+                if exposure_check.get("reps") is None:
+                    pending_exposure = exposure_check
+                else:
+                    insert_exposure(exposure_check)
+                    pending_exposure = None
+                session_notes.append(line)
+                continue
             if first_exercise_line and line != first_exercise_line and in_preamble:
                 session_notes.append(line)
             else:
                 in_preamble = False
-                create_exercise(normalize_exercise_name(stripped))
+                exercise_name_src = line if is_normal_exercise_heading(line) and not is_normal_exercise_heading(stripped) else stripped
+                create_exercise(normalize_exercise_name(exercise_name_src))
             continue
         if current_exercise_id is not None and looks_like_set_attempt(line):
             print("\n+++ LOG VALIDATION WARNING +++")

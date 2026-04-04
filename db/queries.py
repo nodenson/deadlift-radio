@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from db.schema import DB_PATH
 
@@ -233,7 +234,7 @@ def session_has_pr(conn, session_id: int) -> bool:
     return False
 
 
-def log_prs(conn, session_id: int, db_path: str, log_path: str = "/home/bune/deadlift_radio/logs/pr_history.log") -> list:
+def log_prs(conn, session_id: int, db_path: str, log_path: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "logs", "pr_history.log")) -> list:
     """
     Detects PRs in the session, writes them to the personal_records table
     and appends to the flat log file. Returns list of PR dicts.

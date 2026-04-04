@@ -4,6 +4,8 @@ from datetime import datetime
 
 def parse_log_date(line: str):
     text = line.strip()
+    text = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", text)
+    text = text.replace(",", "")
     for fmt in ("%B %d %Y", "%b %d %Y"):
         try:
             return datetime.strptime(text, fmt).strftime("%Y-%m-%d")
@@ -130,7 +132,10 @@ def looks_like_note_line(line: str) -> bool:
 
 def extract_bodyweight_from_line(line: str):
     text = line.strip().lower()
-    m = re.search(r"\bbw\.?\s*(\d+(?:\.\d+)?)", text)
+    m = re.search(r"\bbw\.?\s*(\d+(?:\.\d+)?)(?!\s*['\"]\d)", text)
+    if m:
+        return float(m.group(1))
+    m = re.search(r"(\d+(?:\.\d+)?)\s*bw\b", text)
     if m:
         return float(m.group(1))
     m = re.search(r"(\d+(?:\.\d+)?)\s*lbs?\s+bodyweight", text)
@@ -162,7 +167,8 @@ def parse_reps_first_exercise_heading(line: str):
 
 
 def is_normal_exercise_heading(line: str) -> bool:
-    if any(ch.isdigit() for ch in line):
+    import re as _re
+    if _re.search(r"\d", line) and not _re.search(r"\d+-\w+|\d+\s*way", line.lower()):
         return False
     lower = line.strip().lower()
     if lower in {"bar"}:
@@ -185,6 +191,15 @@ def classify_exposure(line: str):
         nums = [int(x) for x in re.findall(r"\d+", lower)]
         return {"movement": "lever_back", "implement": "sword grip handle", "reps": nums[0] if nums else None, "seconds": None, "load": None, "notes": text}
 
+    if "chest expander" in lower or "chest xpander" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        return {"movement": "chest_expander", "implement": "chest expander", "reps": nums[0] if nums else None, "seconds": None, "load": None, "notes": text}
+    if "ulnar" in lower or "radial deviation" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        return {"movement": "ulnar_radial_deviation", "implement": None, "reps": nums[0] if nums else None, "seconds": None, "load": None, "notes": text}
+    if "pronation" in lower or "supination" in lower:
+        nums = [int(x) for x in re.findall(r"\d+", lower)]
+        return {"movement": "pronation_supination", "implement": "pronation device", "reps": nums[0] if nums else None, "seconds": None, "load": None, "notes": text}
     if "neutral setting" in lower and "rep" in lower:
         nums = [int(x) for x in re.findall(r"\d+", lower)]
         return {"movement": "pronation_supination", "implement": "pronation device", "reps": nums[0] if nums else None, "seconds": None, "load": None, "notes": text}

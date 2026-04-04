@@ -3,6 +3,7 @@ REPO="/home/bune/deadlift_radio"
 LOG="$REPO/.aider_sessions/$(date +%Y%m%dT%H%M%S).log"
 mkdir -p "$REPO/.aider_sessions"
 cd "$REPO" || exit 1
+source "$REPO/venv/bin/activate"
 export $(cat "$REPO/.env" | xargs)
 
 MODEL="${1:-ollama/llama3.1:70b}"

@@ -1,11 +1,12 @@
 import os
 import sqlite3
 
-DB_PATH = os.getenv("DLR_DB_PATH", "archive_dev.db")
+DB_PATH = os.getenv("DLR_DB_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "archive_dev.db"))
 
 
 def init_db() -> None:
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
     cur = conn.cursor()
 
     cur.execute("""
