@@ -1,7 +1,8 @@
 # /home/bune/deadlift_radio/cli/query_router.py
 
 import sys
-sys.path.insert(0, '/home/bune/deadlift_radio')
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from analytics.dossier import build_exercise_dossier
 from analytics.timeline import build_timeline
