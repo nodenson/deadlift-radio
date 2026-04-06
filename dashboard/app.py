@@ -1,6 +1,6 @@
 import sys
 import os
-sys.path.insert(0, '/home/bune/deadlift_radio')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import sqlite3
 from fastapi import FastAPI
@@ -128,7 +128,7 @@ if __name__ == "__main__":
 from fastapi.responses import FileResponse
 from datetime import datetime
 
-EXPORT_DIR = "/home/bune/deadlift_radio/exports"
+EXPORT_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "exports")
 
 @app.get("/card/{session_id}")
 def serve_card(session_id: int):
