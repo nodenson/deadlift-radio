@@ -60,10 +60,6 @@ CREATE INDEX IF NOT EXISTS idx_scout_runs_query   ON scout_runs(query);
 
 def get_db_path():
     here = Path(__file__).resolve()
-    for parent in here.parents:
-        candidate = parent / "archive_dev.db"
-        if candidate.exists():
-            return candidate
     return here.parent / "scout.db"
 
 def get_connection(db_path=None):
