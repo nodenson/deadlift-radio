@@ -13,6 +13,11 @@ from db.queries import (
     get_pr_register,
 )
 from reports.card import generate_session_card
+from reports.markdown import export_session_to_markdown_prompt
+from analytics.exposure import show_weekly_exposure_report
+from analytics.readiness import show_readiness_score
+from analytics.fatigue import show_fatigue_analysis
+from analytics.tonnage import show_workload_change_report, show_weekly_strength_report
 from cli.query_router import run_query_prompt
 from reports.movement_ledger_cli import print_movement_ledger
 from reports.movement_ledger_card import render_movement_ledger_card
@@ -25,7 +30,6 @@ from reports.exercise_dossier_card import render_exercise_dossier_card
 from analytics.dossier import build_exercise_dossier
 from reports.weekly_card import generate_weekly_card
 from reports.graphs import generate_training_graphs
-from reports.card import generate_session_card
 from classification.movements import classify_exercise_movement, show_classification_audit
 from utils.spinner import run_with_grimdark_spinner
 
