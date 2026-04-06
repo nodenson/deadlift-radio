@@ -68,7 +68,7 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         return any(w in low for w in SESSION_META_WORDS)
     first_exercise_line = None
     for i, l in enumerate(lines):
-        stripped = l.split("-")[0].strip()
+        stripped = l.split(" - ")[0].strip()
         if (is_normal_exercise_heading(stripped) or is_normal_exercise_heading(l)) and not looks_like_session_meta(stripped) and not classify_exposure(l):
             for j in lines[i+1:i+4]:
                 if (parse_plate_notation(j) or parse_standard_set_line(j) or
@@ -127,7 +127,7 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
         if line.startswith("#"):
             session_notes.append(line)
             continue
-        stripped_early = line.split("-")[0].strip()
+        stripped_early = line.split(" - ")[0].strip()
         if is_normal_exercise_heading(stripped_early):
             early_exposure = classify_exposure(line)
             if early_exposure is not None:
@@ -191,7 +191,7 @@ def ingest_workout(raw_text: str, bodyweight=None, session_date=None) -> int:
             create_exercise(exercise_name)
             pending_reps_hint = reps_hint
             continue
-        stripped = line.split("-")[0].strip()
+        stripped = line.split(" - ")[0].strip()
         if is_normal_exercise_heading(stripped) or is_normal_exercise_heading(line):
             exposure_check = classify_exposure(line)
             if exposure_check is not None:
